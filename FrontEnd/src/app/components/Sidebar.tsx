@@ -1,0 +1,96 @@
+import { Link, useLocation, useNavigate } from "react-router";
+import { 
+  LayoutDashboard, 
+  FileText, 
+  Briefcase, 
+  Lightbulb, 
+  Settings,
+  Target,
+  LogOut
+} from "lucide-react";
+import { cn } from "./ui/utils";
+import { Button } from "./ui/button";
+import { motion } from "motion/react";
+
+const navigation = [
+  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { name: "Resume", href: "/dashboard/resume", icon: FileText },
+  { name: "Job Matches", href: "/dashboard/matches", icon: Briefcase },
+  { name: "Insights", href: "/dashboard/insights", icon: Lightbulb },
+  { name: "Settings", href: "/dashboard/settings", icon: Settings },
+];
+
+export function Sidebar() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    // In production, this would clear auth tokens, etc.
+    localStorage.removeItem("isAuthenticated");
+    navigate("/login");
+  };
+
+  return (
+    <div className="flex flex-col h-full bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800">
+      {/* Logo */}
+      <div className="flex items-center gap-3 px-6 py-6 border-b border-gray-200 dark:border-gray-800">
+        <div className="flex items-center justify-center w-8 h-8 bg-gradient-to-br from-emerald-600 to-teal-600 rotate-45">
+          <Target className="w-5 h-5 text-white -rotate-45" />
+        </div>
+        <h1 className="text-xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
+          HireSense
+        </h1>
+      </div>
+
+      {/* Navigation */}
+      <nav className="flex-1 px-3 py-4 space-y-1">
+        {navigation.map((item) => {
+          const isActive = item.href === "/dashboard" 
+            ? location.pathname === "/dashboard" 
+            : location.pathname === item.href;
+          
+          return (
+            <Link
+              key={item.name}
+              to={item.href}
+              className={cn(
+                "flex items-center gap-3 px-3 py-2.5 transition-colors",
+                isActive
+                  ? "bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400"
+                  : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+              )}
+            >
+              <item.icon className="w-5 h-5" />
+              <span className="font-medium">{item.name}</span>
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* Footer */}
+      <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-800 space-y-3">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">Demo User</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">demo@hiresense.ai</p>
+          </div>
+        </div>
+        <motion.div
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+        >
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleLogout}
+            className="w-full justify-start text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50 font-medium transition-all duration-200"
+          >
+            <LogOut className="w-4 h-4 mr-2" />
+            Logout
+          </Button>
+        </motion.div>
+      </div>
+    </div>
+  );
+}
