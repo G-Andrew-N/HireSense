@@ -21,12 +21,12 @@ export function Landing() {
             {/* Auth Buttons */}
             <div className="flex items-center gap-3">
               <Link to="/login">
-                <Button variant="outline" className="hidden sm:inline-flex border-gray-700 text-gray-300 hover:bg-gray-900">
+                <Button variant="outline" className="hidden sm:inline-flex bg-white/10 border-white/30 text-white hover:bg-white/20 hover:border-white/50 rounded-lg">
                   Sign in
                 </Button>
               </Link>
               <Link to="/signup">
-                <Button className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700">
+                <Button className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 rounded-lg">
                   Get Started
                 </Button>
               </Link>
@@ -75,13 +75,13 @@ export function Landing() {
               className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-20"
             >
               <Link to="/signup">
-                <Button size="lg" className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-lg px-8 py-6 w-full sm:w-auto">
+                <Button size="lg" className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-lg px-8 py-6 w-full sm:w-auto rounded-lg">
                   Get Started
                   <ArrowRight className="w-5 h-5 ml-2" />
                 </Button>
               </Link>
               <Link to="/login">
-                <Button size="lg" variant="outline" className="text-lg px-8 py-6 w-full sm:w-auto border-gray-700 text-gray-300 hover:bg-gray-900">
+                <Button size="lg" variant="outline" className="text-lg px-8 py-6 w-full sm:w-auto bg-white/10 border-white/30 text-white hover:bg-white/20 hover:border-white/50 rounded-lg">
                   Sign In
                 </Button>
               </Link>

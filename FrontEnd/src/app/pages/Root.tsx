@@ -18,7 +18,7 @@ export function Root() {
   }, [navigate]);
 
   return (
-    <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
+    <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
       <div className="flex h-screen bg-gray-50 dark:bg-gray-950">
         {/* Desktop Sidebar */}
         <div className="hidden lg:block w-64 flex-shrink-0">
