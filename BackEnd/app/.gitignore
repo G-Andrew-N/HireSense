@@ -13,3 +13,4 @@ logs/
 *.key
 credentials.json
 secrets/
+celerybeat-schedule*
