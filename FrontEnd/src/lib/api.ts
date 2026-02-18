@@ -1,0 +1,313 @@
+/**
+ * API client for HireSense backend.
+ * Uses fetch with JWT auth, proxy in dev: /api -> backend.
+ */
+
+const API_BASE = '/api';
+
+export interface ApiError {
+  detail?: string;
+  [key: string]: unknown;
+}
+
+async function getToken(): Promise<string | null> {
+  return localStorage.getItem('access');
+}
+
+async function setTokens(access: string, refresh: string): Promise<void> {
+  localStorage.setItem('access', access);
+  localStorage.setItem('refresh', refresh);
+}
+
+async function clearTokens(): Promise<void> {
+  localStorage.removeItem('access');
+  localStorage.removeItem('refresh');
+}
+
+async function refreshAccessToken(): Promise<string | null> {
+  const refresh = localStorage.getItem('refresh');
+  if (!refresh) return null;
+  const res = await fetch(`${API_BASE}/auth/refresh/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh }),
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  const access = data.access;
+  if (access) {
+    localStorage.setItem('access', access);
+    if (data.refresh) localStorage.setItem('refresh', data.refresh);
+    return access;
+  }
+  return null;
+}
+
+export async function apiRequest<T>(
+  path: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const url = path.startsWith('http') ? path : `${API_BASE}${path.startsWith('/') ? path : `/${path}`}`;
+  const token = await getToken();
+
+  const headers: HeadersInit = {
+    ...(options.headers as Record<string, string>),
+  };
+  if (token && !headers['Authorization']) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  if (!(options.body instanceof FormData) && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+  if (options.body instanceof FormData && headers['Content-Type']) {
+    delete headers['Content-Type'];
+  }
+
+  let res = await fetch(url, { ...options, headers });
+
+  // Retry once with refreshed token on 401
+  if (res.status === 401 && token) {
+    const newToken = await refreshAccessToken();
+    if (newToken) {
+      headers['Authorization'] = `Bearer ${newToken}`;
+      res = await fetch(url, { ...options, headers });
+    }
+  }
+
+  if (!res.ok) {
+    let errBody: ApiError = {};
+    try {
+      errBody = await res.json();
+    } catch {
+      errBody = { detail: res.statusText };
+    }
+    const err = new Error(errBody.detail || `Request failed: ${res.status}`);
+    (err as Error & { status?: number; body?: ApiError }).status = res.status;
+    (err as Error & { status?: number; body?: ApiError }).body = errBody;
+    throw err;
+  }
+
+  if (res.status === 204) return undefined as T;
+  return res.json();
+}
+
+// Auth
+export interface LoginResponse {
+  user: { id: number; email: string; first_name: string; last_name: string };
+  access: string;
+  refresh: string;
+}
+
+export async function login(email: string, password: string): Promise<LoginResponse> {
+  const data = await apiRequest<LoginResponse>('/auth/login/', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+  await setTokens(data.access, data.refresh);
+  return data;
+}
+
+export interface RegisterResponse extends LoginResponse {}
+
+export async function register(
+  email: string,
+  password: string,
+  full_name?: string
+): Promise<RegisterResponse> {
+  const data = await apiRequest<RegisterResponse>('/auth/register/', {
+    method: 'POST',
+    body: JSON.stringify({ email, password, full_name }),
+  });
+  await setTokens(data.access, data.refresh);
+  return data;
+}
+
+export async function logout(): Promise<void> {
+  const refresh = localStorage.getItem('refresh');
+  if (refresh) {
+    try {
+      await apiRequest('/auth/logout/', {
+        method: 'POST',
+        body: JSON.stringify({ refresh }),
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+  await clearTokens();
+}
+
+export async function requestPasswordReset(email: string): Promise<void> {
+  await apiRequest('/auth/password-reset/', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+
+export async function confirmPasswordReset(
+  uid: string,
+  token: string,
+  new_password: string
+): Promise<void> {
+  await apiRequest('/auth/password-reset/confirm/', {
+    method: 'POST',
+    body: JSON.stringify({ uid, token, new_password }),
+  });
+}
+
+export interface User {
+  id: number;
+  email: string;
+  first_name: string;
+  last_name: string;
+}
+
+export async function getMe(): Promise<User> {
+  return apiRequest<User>('/auth/me/');
+}
+
+// Resumes
+export interface Resume {
+  id: number;
+  file: string;
+  original_filename: string;
+  uploaded_at: string;
+  version: number;
+  parsed_content: Record<string, unknown>;
+  raw_text: string;
+}
+
+export async function getResumes(): Promise<Resume[]> {
+  const data = await apiRequest<Resume[]>('/resumes/');
+  return Array.isArray(data) ? data : [];
+}
+
+export async function uploadResume(file: File): Promise<Resume> {
+  const form = new FormData();
+  form.append('file', file);
+  return apiRequest<Resume>('/resumes/', {
+    method: 'POST',
+    body: form,
+  });
+}
+
+/** Download resume file (auth required). Triggers browser download. */
+export async function downloadResume(id: number, filename: string): Promise<void> {
+  const token = localStorage.getItem('access');
+  const url = `${API_BASE}/resumes/${id}/download/`;
+  const res = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error('Download failed');
+  const blob = await res.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename || 'resume.pdf';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+export async function deleteResume(id: number): Promise<void> {
+  await apiRequest(`/resumes/${id}/`, { method: 'DELETE' });
+}
+
+// Job matches
+export interface JobMatch {
+  id: number;
+  title: string;
+  company: string;
+  location: string;
+  match_score: number;
+  interview_probability: number;
+  salary: string;
+  posted_date: string | null;
+  source: string;
+  logo?: string;
+  external_url: string;
+  skills: string[];
+  missing_skills: string[];
+  created_at: string;
+}
+
+export async function getJobMatches(): Promise<JobMatch[]> {
+  const data = await apiRequest<JobMatch[]>('/job-matches/');
+  return Array.isArray(data) ? data : [];
+}
+
+export async function triggerJobScan(sync = true): Promise<{ task_id?: string; total_stored?: number }> {
+  const url = sync ? '/jobs/scan/?sync=true' : '/jobs/scan/';
+  return apiRequest<{ task_id?: string; total_stored?: number; detail?: string }>(url, { method: 'POST' });
+}
+
+export async function triggerMatchAnalysis(sync = true): Promise<{ task_id?: string; matches_created?: number }> {
+  const url = sync ? '/jobs/run-match-analysis/?sync=true' : '/jobs/run-match-analysis/';
+  return apiRequest<{ task_id?: string; matches_created?: number; detail?: string }>(url, { method: 'POST' });
+}
+
+/** Chunked match analysis: process a few jobs and return new matches. For progressive rendering. */
+export async function triggerMatchAnalysisChunk(
+  chunkSize = 3
+): Promise<{ matches: JobMatch[]; has_more: boolean }> {
+  const url = `/jobs/run-match-analysis/?sync=true&chunk=${chunkSize}`;
+  const data = await apiRequest<{ matches: JobMatch[]; has_more: boolean }>(url, { method: 'POST' });
+  return { matches: data.matches ?? [], has_more: data.has_more ?? false };
+}
+
+// Insights
+export interface ResumeInsight {
+  id: number;
+  category: 'critical' | 'important' | 'suggestion';
+  title: string;
+  description: string;
+  impact: 'high' | 'medium' | 'low';
+  created_at: string;
+}
+
+export async function getInsights(): Promise<ResumeInsight[]> {
+  const data = await apiRequest<ResumeInsight[]>('/insights/');
+  return Array.isArray(data) ? data : [];
+}
+
+export async function generateInsights(): Promise<ResumeInsight[]> {
+  const data = await apiRequest<ResumeInsight[]>('/insights/generate/', { method: 'POST' });
+  return Array.isArray(data) ? data : [];
+}
+
+// Job sites
+export interface JobSite {
+  id: number;
+  name: string;
+  url: string;
+  enabled: boolean;
+  logo?: string;
+  is_builtin: boolean;
+  source_type?: string;
+  scrape_config?: Record<string, unknown>;
+  created_at: string;
+}
+
+export async function getJobSites(): Promise<JobSite[]> {
+  const data = await apiRequest<JobSite[]>('/job-sites/');
+  return Array.isArray(data) ? data : [];
+}
+
+export async function updateJobSite(
+  id: number,
+  patch: Partial<Pick<JobSite, 'enabled' | 'name' | 'url'>>
+): Promise<JobSite> {
+  return apiRequest<JobSite>(`/job-sites/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function createJobSite(data: { name: string; url: string }): Promise<JobSite> {
+  return apiRequest<JobSite>('/job-sites/', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteJobSite(id: number): Promise<void> {
+  await apiRequest(`/job-sites/${id}/`, { method: 'DELETE' });
+}

@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { toast } from "sonner";
 import { Link } from "react-router";
+import { requestPasswordReset } from "../../lib/api";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -9,11 +11,19 @@ import { motion } from "motion/react";
 export function ForgotPassword() {
   const [email, setEmail] = useState("");
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Demo - in production, this would call an API
-    setIsSubmitted(true);
+    setLoading(true);
+    try {
+      await requestPasswordReset(email);
+      setIsSubmitted(true);
+    } catch {
+      toast.error("Could not send reset email. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -83,8 +93,8 @@ export function ForgotPassword() {
                     </div>
                   </div>
 
-                  <Button type="submit" className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700">
-                    Send reset instructions
+                  <Button type="submit" disabled={loading} className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700">
+                    {loading ? "Sending..." : "Send reset instructions"}
                   </Button>
                 </form>
               </motion.div>

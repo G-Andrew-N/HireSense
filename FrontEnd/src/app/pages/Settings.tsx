@@ -1,60 +1,90 @@
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Header } from "../components/Header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
-import { 
-  Globe, 
-  Plus,
-  Trash2,
-  Bell,
-  Mail,
-  User,
-  Save
-} from "lucide-react";
-import { mockJobSites } from "../data/mockData";
-import { useState } from "react";
+import { Globe, Plus, Trash2, Bell, Mail, User, Save, Loader2 } from "lucide-react";
+import {
+  getJobSites,
+  updateJobSite,
+  createJobSite,
+  deleteJobSite,
+  type JobSite,
+} from "../../lib/api";
+import { useAuth } from "../../lib/auth-context";
 
 export function Settings() {
-  const [jobSites, setJobSites] = useState(mockJobSites);
+  const { user } = useAuth();
+  const [jobSites, setJobSites] = useState<JobSite[]>([]);
+  const [loading, setLoading] = useState(true);
   const [newSiteUrl, setNewSiteUrl] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  const toggleSite = (id: string) => {
-    setJobSites(sites => 
-      sites.map(site => 
-        site.id === id ? { ...site, enabled: !site.enabled } : site
-      )
-    );
+  const load = () => {
+    setLoading(true);
+    getJobSites()
+      .then(setJobSites)
+      .catch(() => toast.error("Failed to load job sites"))
+      .finally(() => setLoading(false));
   };
 
-  const removeSite = (id: string) => {
-    setJobSites(sites => sites.filter(site => site.id !== id));
+  useEffect(() => {
+    load();
+  }, []);
+
+  const toggleSite = async (site: JobSite) => {
+    try {
+      const updated = await updateJobSite(site.id, { enabled: !site.enabled });
+      setJobSites((s) => s.map((x) => (x.id === site.id ? updated : x)));
+      toast.success("Updated");
+    } catch {
+      toast.error("Failed to update");
+    }
   };
 
-  const addSite = () => {
-    if (newSiteUrl.trim()) {
-      const newSite = {
-        id: Date.now().toString(),
-        name: new URL(newSiteUrl).hostname.replace('www.', ''),
-        enabled: true,
-        url: newSiteUrl,
-      };
-      setJobSites([...jobSites, newSite]);
+  const removeSite = async (site: JobSite) => {
+    if (site.is_builtin) return;
+    try {
+      await deleteJobSite(site.id);
+      setJobSites((s) => s.filter((x) => x.id !== site.id));
+      toast.success("Site removed");
+    } catch {
+      toast.error("Failed to delete");
+    }
+  };
+
+  const addSite = async () => {
+    const url = newSiteUrl.trim();
+    if (!url) return;
+    try {
+      let name = "";
+      try {
+        name = new URL(url).hostname.replace("www.", "");
+      } catch {
+        name = "Custom";
+      }
+      const created = await createJobSite({ name, url });
+      setJobSites((s) => [created, ...s]);
       setNewSiteUrl("");
+      toast.success("Site added");
+    } catch (err: unknown) {
+      const msg = (err as { body?: { detail?: string } })?.body?.detail ?? "Failed to add site";
+      toast.error(msg);
     }
   };
 
   return (
     <div className="flex flex-col h-full overflow-auto">
-      <Header 
-        title="Settings" 
+      <Header
+        title="Settings"
         subtitle="Manage your account, notifications, and job site preferences"
       />
-      
+
       <div className="flex-1 p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 pb-20 lg:pb-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-          {/* Main Settings */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -62,71 +92,76 @@ export function Settings() {
                 Job Posting Websites
               </CardTitle>
               <CardDescription>
-                Select which job boards HireSense should monitor for matches
+                Enable or disable job sources. Built-in sources can be toggled; add custom RSS feed URLs below.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Default Sites */}
-              <div className="space-y-3">
-                {jobSites.map((site) => (
-                  <div
-                    key={site.id}
-                    className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-900 dark:to-teal-900 flex items-center justify-center">
-                        <Globe className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-                      </div>
-                      <div>
-                        <h4 className="font-semibold text-gray-900 dark:text-gray-100">{site.name}</h4>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">{site.url}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <Switch 
-                        checked={site.enabled}
-                        onCheckedChange={() => toggleSite(site.id)}
-                      />
-                      {!["1", "2", "3"].includes(site.id) && (
-                        <Button 
-                          variant="ghost" 
-                          size="icon"
-                          onClick={() => removeSite(site.id)}
-                        >
-                          <Trash2 className="w-4 h-4 text-red-600" />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Add New Site */}
-              <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-                <Label htmlFor="new-site" className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
-                  Add Custom Job Board
-                </Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="new-site"
-                    placeholder="https://example.com/jobs"
-                    value={newSiteUrl}
-                    onChange={(e) => setNewSiteUrl(e.target.value)}
-                    className="flex-1"
-                  />
-                  <Button onClick={addSite}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Site
-                  </Button>
+              {loading ? (
+                <div className="py-8 flex items-center justify-center">
+                  <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
                 </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                  Enter the URL of any job board you'd like HireSense to monitor
-                </p>
-              </div>
+              ) : (
+                <>
+                  <div className="space-y-3">
+                    {jobSites.map((site) => (
+                      <div
+                        key={site.id}
+                        className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-900 dark:to-teal-900 flex items-center justify-center">
+                            <Globe className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-gray-900 dark:text-gray-100">{site.name}</h4>
+                            <p className="text-sm text-gray-500 dark:text-gray-400 truncate max-w-[200px]">{site.url}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <Switch
+                            checked={site.enabled}
+                            onCheckedChange={() => toggleSite(site)}
+                          />
+                          {!site.is_builtin && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removeSite(site)}
+                            >
+                              <Trash2 className="w-4 h-4 text-red-600" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <Label htmlFor="new-site" className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+                      Add Custom Job Board
+                    </Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="new-site"
+                        placeholder="https://example.com/jobs"
+                        value={newSiteUrl}
+                        onChange={(e) => setNewSiteUrl(e.target.value)}
+                        className="flex-1"
+                      />
+                      <Button onClick={addSite} disabled={saving}>
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Site
+                      </Button>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                      Enter the URL of any job board (RSS feed URL recommended)
+                    </p>
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
 
-          {/* Notifications */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -148,7 +183,6 @@ export function Settings() {
                 </div>
                 <Switch defaultChecked />
               </div>
-
               <div className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700">
                 <div className="flex items-center gap-3">
                   <Bell className="w-5 h-5 text-gray-600 dark:text-gray-400" />
@@ -159,7 +193,6 @@ export function Settings() {
                 </div>
                 <Switch defaultChecked />
               </div>
-
               <div className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700">
                 <div className="flex items-center gap-3">
                   <Bell className="w-5 h-5 text-gray-600 dark:text-gray-400" />
@@ -173,7 +206,6 @@ export function Settings() {
             </CardContent>
           </Card>
 
-          {/* Profile Settings */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -185,51 +217,26 @@ export function Settings() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="name">Full Name</Label>
-                  <Input id="name" defaultValue="Demo User" />
+                  <Input
+                    id="name"
+                    defaultValue={user ? [user.first_name, user.last_name].filter(Boolean).join(" ") || "—" : ""}
+                    readOnly
+                    className="bg-gray-50 dark:bg-gray-800"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
-                  <Input id="email" type="email" defaultValue="demo@hiresense.ai" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Phone Number</Label>
-                  <Input id="phone" type="tel" defaultValue="+1 (555) 123-4567" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="location">Preferred Location</Label>
-                  <Input id="location" defaultValue="San Francisco, CA" />
+                  <Input
+                    id="email"
+                    type="email"
+                    defaultValue={user?.email ?? ""}
+                    readOnly
+                    className="bg-gray-50 dark:bg-gray-800"
+                  />
                 </div>
               </div>
             </CardContent>
           </Card>
-        </div>
-
-        {/* Save All Changes - Sticky Footer */}
-        <div className="sticky bottom-0 left-0 right-0 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 p-4 sm:p-6 mt-6 shadow-lg">
-          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="text-center sm:text-left">
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                Unsaved Changes
-              </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Save your settings across all categories
-              </p>
-            </div>
-            <div className="flex gap-3 w-full sm:w-auto">
-              <Button 
-                variant="outline" 
-                className="flex-1 sm:flex-initial"
-              >
-                Discard
-              </Button>
-              <Button 
-                className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white flex-1 sm:flex-initial shadow-lg"
-              >
-                <Save className="w-4 h-4 mr-2" />
-                Save All Changes
-              </Button>
-            </div>
-          </div>
         </div>
       </div>
     </div>

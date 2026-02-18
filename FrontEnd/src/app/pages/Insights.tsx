@@ -1,46 +1,69 @@
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Header } from "../components/Header";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
-import { 
-  Lightbulb, 
+import {
+  Lightbulb,
   AlertCircle,
   CheckCircle2,
   TrendingUp,
-  Target,
   Sparkles,
   ArrowRight,
   X,
-  Check
+  Check,
+  Loader2,
 } from "lucide-react";
-import { mockInsights } from "../data/mockData";
+import { getInsights, generateInsights, type ResumeInsight } from "../../lib/api";
 import { motion, AnimatePresence } from "motion/react";
-import { useState } from "react";
 
 export function Insights() {
-  const [ignoredInsights, setIgnoredInsights] = useState<string[]>([]);
-  
-  const visibleInsights = mockInsights.filter(insight => !ignoredInsights.includes(insight.id));
-  
-  const allInsights = [...visibleInsights].sort((a, b) => {
-    const priorityOrder = { critical: 0, important: 1, suggestion: 2 };
-    return priorityOrder[a.category as keyof typeof priorityOrder] - priorityOrder[b.category as keyof typeof priorityOrder];
+  const [insights, setInsights] = useState<ResumeInsight[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [ignoredIds, setIgnoredIds] = useState<number[]>([]);
+
+  const loadInsights = () => {
+    setLoading(true);
+    getInsights()
+      .then(setInsights)
+      .catch(() => toast.error("Failed to load insights"))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadInsights();
+  }, []);
+
+  const handleGenerate = () => {
+    setGenerating(true);
+    generateInsights()
+      .then((data) => {
+        setInsights(data);
+        setIgnoredIds([]);
+        if (data.length > 0) toast.success(`Generated ${data.length} insights`);
+        else toast.info("No insights generated. Ensure your resume is uploaded and OPENAI_API_KEY is set.");
+      })
+      .catch((err: Error & { body?: { detail?: string } }) => {
+        const msg = err?.body?.detail ?? err?.message ?? "Failed to generate insights";
+        toast.error(msg);
+      })
+      .finally(() => setGenerating(false));
+  };
+
+  const visible = insights.filter((i) => !ignoredIds.includes(i.id));
+  const allInsights = [...visible].sort((a, b) => {
+    const o: Record<string, number> = { critical: 0, important: 1, suggestion: 2 };
+    return (o[a.category] ?? 2) - (o[b.category] ?? 2);
   });
 
-  const criticalCount = visibleInsights.filter(i => i.category === "critical").length;
-  const importantCount = visibleInsights.filter(i => i.category === "important").length;
-  const suggestionCount = visibleInsights.filter(i => i.category === "suggestion").length;
+  const criticalCount = visible.filter((i) => i.category === "critical").length;
+  const importantCount = visible.filter((i) => i.category === "important").length;
+  const suggestionCount = visible.filter((i) => i.category === "suggestion").length;
 
-  const handleIgnore = (id: string) => {
-    setIgnoredInsights(prev => [...prev, id]);
-  };
-
-  const handleApply = (id: string) => {
-    // Handle apply logic - could show a success message, etc.
-    console.log("Applied recommendation:", id);
-    // For now, we'll also remove it from view after applying
-    setIgnoredInsights(prev => [...prev, id]);
-  };
+  const handleIgnore = (id: number) => setIgnoredIds((p) => [...p, id]);
+  const handleApply = (id: number) => setIgnoredIds((p) => [...p, id]);
 
   const getPriorityBadge = (category: string) => {
     if (category === "critical") return <Badge className="bg-red-600 text-white border-0">Critical</Badge>;
@@ -56,13 +79,12 @@ export function Insights() {
 
   return (
     <div className="flex flex-col h-full overflow-auto">
-      <Header 
-        title="Resume Insights" 
+      <Header
+        title="Resume Insights"
         subtitle="AI-powered suggestions to improve your resume and increase match rates"
       />
-      
+
       <div className="flex-1 p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 pb-20 lg:pb-8">
-        {/* AI Impact Summary */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -77,31 +99,26 @@ export function Insights() {
                     <h3 className="text-lg sm:text-xl font-semibold">Potential Impact</h3>
                   </div>
                   <p className="text-emerald-100 text-sm mb-4">
-                    By implementing these {allInsights.length} recommendations, you could significantly improve your job application success rate.
+                    By implementing these recommendations, you could significantly improve your job application success rate.
                   </p>
                   <div className="grid grid-cols-2 gap-4 sm:gap-6">
                     <div>
-                      <div className="text-2xl sm:text-3xl font-bold">+23%</div>
-                      <div className="text-xs sm:text-sm text-emerald-100">Match Rate Increase</div>
+                      <div className="text-2xl sm:text-3xl font-bold">{allInsights.length}</div>
+                      <div className="text-xs sm:text-sm text-emerald-100">Recommendations</div>
                     </div>
                     <div>
-                      <div className="text-2xl sm:text-3xl font-bold">72% → 88%</div>
-                      <div className="text-xs sm:text-sm text-emerald-100">Interview Probability</div>
+                      <div className="text-2xl sm:text-3xl font-bold">{criticalCount + importantCount}</div>
+                      <div className="text-xs sm:text-sm text-emerald-100">High Priority</div>
                     </div>
                   </div>
                 </div>
-                <Button className="bg-white text-emerald-600 hover:bg-emerald-50 w-full sm:w-auto sm:shrink-0">
-                  Apply All
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
               </div>
             </CardContent>
           </Card>
         </motion.div>
 
-        {/* Quick Stats */}
         <div className="grid grid-cols-3 gap-3 sm:gap-4">
-          <motion.div 
+          <motion.div
             className="flex flex-col sm:flex-row items-center sm:items-center gap-2 sm:gap-3 p-3 sm:p-4 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -113,7 +130,7 @@ export function Insights() {
               <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">Critical</div>
             </div>
           </motion.div>
-          <motion.div 
+          <motion.div
             className="flex flex-col sm:flex-row items-center sm:items-center gap-2 sm:gap-3 p-3 sm:p-4 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -125,7 +142,7 @@ export function Insights() {
               <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">Important</div>
             </div>
           </motion.div>
-          <motion.div 
+          <motion.div
             className="flex flex-col sm:flex-row items-center sm:items-center gap-2 sm:gap-3 p-3 sm:p-4 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -139,89 +156,106 @@ export function Insights() {
           </motion.div>
         </div>
 
-        {/* All Insights - Unified List */}
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle>All Recommendations</CardTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleGenerate}
+              disabled={generating}
+              className="shrink-0"
+            >
+              {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+              <span className="ml-2 hidden sm:inline">Regenerate</span>
+            </Button>
           </CardHeader>
           <CardContent>
-            <AnimatePresence mode="popLayout">
-              {allInsights.length === 0 ? (
-                <motion.div 
-                  className="text-center py-12"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                >
-                  <CheckCircle2 className="w-12 h-12 text-green-600 dark:text-green-400 mx-auto mb-3" />
-                  <p className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">All Caught Up!</p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">You've reviewed all recommendations.</p>
-                </motion.div>
-              ) : (
-                <div className="space-y-3">
-                  {allInsights.map((insight, index) => (
-                    <motion.div
-                      key={insight.id}
-                      layout
-                      className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4 p-4 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-purple-300 dark:hover:border-purple-600 transition-colors"
-                      initial={{ opacity: 0, y: 30 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, x: -100, height: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0 }}
-                      transition={{ duration: 0.3 }}
+            {loading ? (
+              <div className="py-12 flex items-center justify-center">
+                <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
+              </div>
+            ) : (
+              <AnimatePresence mode="popLayout">
+                {allInsights.length === 0 ? (
+                  <motion.div
+                    className="text-center py-12"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                  >
+                    <Sparkles className="w-12 h-12 text-emerald-600 dark:text-emerald-400 mx-auto mb-3" />
+                    <p className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                      {insights.length === 0 ? "No insights yet" : "All Caught Up!"}
+                    </p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                      {insights.length === 0
+                        ? "Upload your resume first, then generate AI-powered suggestions."
+                        : "You have no visible insights. Generate new ones from your latest resume."}
+                    </p>
+                    <Button
+                      onClick={handleGenerate}
+                      disabled={generating}
+                      className="bg-gradient-to-r from-emerald-600 to-teal-600"
                     >
-                      <div className="flex items-start gap-3 sm:gap-4 flex-1">
-                        <div className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center flex-shrink-0">
-                          {getCategoryIcon(insight.category)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-2">
-                            <h4 className="font-semibold text-gray-900 dark:text-gray-100">{insight.title}</h4>
-                            {getPriorityBadge(insight.category)}
+                      {generating ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Generating…
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4 mr-2" />
+                          Generate Insights
+                        </>
+                      )}
+                    </Button>
+                  </motion.div>
+                ) : (
+                  <div className="space-y-3">
+                    {allInsights.map((insight, index) => (
+                      <motion.div
+                        key={insight.id}
+                        layout
+                        className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4 p-4 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
+                        initial={{ opacity: 0, y: 30 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, x: -100 }}
+                        transition={{ duration: 0.3, delay: index * 0.05 }}
+                      >
+                        <div className="flex items-start gap-3 sm:gap-4 flex-1">
+                          <div className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center flex-shrink-0">
+                            {getCategoryIcon(insight.category)}
                           </div>
-                          <p className="text-sm text-gray-600 dark:text-gray-400">{insight.description}</p>
-                          <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-2">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-gray-500 dark:text-gray-400">Impact:</span>
-                              <Badge 
-                                variant="outline" 
-                                className={`text-xs ${
-                                  insight.impact === 'high' 
-                                    ? 'border-red-300 text-red-700 dark:border-red-700 dark:text-red-400' 
-                                    : insight.impact === 'medium'
-                                    ? 'border-orange-300 text-orange-700 dark:border-orange-700 dark:text-orange-400'
-                                    : 'border-gray-300 text-gray-700 dark:border-gray-600 dark:text-gray-400'
-                                }`}
-                              >
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-2">
+                              <h4 className="font-semibold text-gray-900 dark:text-gray-100">{insight.title}</h4>
+                              {getPriorityBadge(insight.category)}
+                            </div>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">{insight.description}</p>
+                            <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-2">
+                              <Badge variant="outline" className="text-xs w-fit">
                                 {insight.impact}
                               </Badge>
-                            </div>
-                            <div className="flex items-center gap-2 sm:ml-auto">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-gray-100"
-                                onClick={() => handleIgnore(insight.id)}
-                              >
-                                <X className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
-                                Ignore
-                              </Button>
-                              <Button
-                                size="sm"
-                                className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-700 hover:to-teal-700"
-                                onClick={() => handleApply(insight.id)}
-                              >
-                                <Check className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
-                                Apply
-                              </Button>
+                              <div className="flex gap-2 sm:ml-auto">
+                                <Button size="sm" variant="outline" onClick={() => handleIgnore(insight.id)}>
+                                  <X className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
+                                  Ignore
+                                </Button>
+                                <Button size="sm" className="bg-gradient-to-r from-emerald-600 to-teal-600" onClick={() => handleApply(insight.id)}>
+                                  <Check className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
+                                  Apply
+                                </Button>
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-              )}
-            </AnimatePresence>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+              </AnimatePresence>
+            )}
           </CardContent>
         </Card>
       </div>

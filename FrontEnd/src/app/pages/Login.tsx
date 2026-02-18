@@ -1,5 +1,8 @@
 import { useState } from "react";
+import { toast } from "sonner";
 import { Link, useNavigate } from "react-router";
+import { login } from "../../lib/api";
+import { useAuth } from "../../lib/auth-context";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -8,16 +11,25 @@ import { motion } from "motion/react";
 
 export function Login() {
   const navigate = useNavigate();
+  const { setUser } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Demo login - in production, this would call an API
-    if (email && password) {
-      localStorage.setItem("isAuthenticated", "true");
+    if (!email || !password) return;
+    setLoading(true);
+    try {
+      const res = await login(email, password);
+      setUser(res.user);
       navigate("/dashboard");
+    } catch (err: unknown) {
+      const msg = (err as { body?: { detail?: string } })?.body?.detail ?? "Login failed";
+      toast.error(msg);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -139,8 +151,8 @@ export function Login() {
                 </Link>
               </div>
 
-              <Button type="submit" className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700">
-                Sign in
+              <Button type="submit" disabled={loading} className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700">
+                {loading ? "Signing in..." : "Sign in"}
               </Button>
             </motion.form>
 

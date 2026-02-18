@@ -1,5 +1,8 @@
 import { useState } from "react";
+import { toast } from "sonner";
 import { Link, useNavigate } from "react-router";
+import { register } from "../../lib/api";
+import { useAuth } from "../../lib/auth-context";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -8,7 +11,9 @@ import { motion } from "motion/react";
 
 export function Signup() {
   const navigate = useNavigate();
+  const { setUser } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
@@ -16,12 +21,24 @@ export function Signup() {
     confirmPassword: "",
   });
 
-  const handleSignup = (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Demo signup - in production, this would call an API
-    if (formData.password === formData.confirmPassword) {
-      localStorage.setItem("isAuthenticated", "true");
+    if (formData.password !== formData.confirmPassword) {
+      toast.error("Passwords do not match");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await register(formData.email, formData.password, formData.fullName);
+      setUser(res.user);
       navigate("/dashboard");
+    } catch (err: unknown) {
+      const msg = (err as { body?: { email?: string[]; detail?: string } })?.body?.email?.[0]
+        ?? (err as { body?: { detail?: string } })?.body?.detail
+        ?? "Signup failed";
+      toast.error(msg);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -198,8 +215,8 @@ export function Signup() {
                 </label>
               </div>
 
-              <Button type="submit" className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700">
-                Create account
+              <Button type="submit" disabled={loading} className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700">
+                {loading ? "Creating account..." : "Create account"}
               </Button>
             </motion.form>
 

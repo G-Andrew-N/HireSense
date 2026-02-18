@@ -1,62 +1,101 @@
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Header } from "../components/Header";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { Progress } from "../components/ui/progress";
-import { 
-  TrendingUp, 
-  Target, 
-  CheckCircle2, 
+import {
+  TrendingUp,
+  Target,
+  CheckCircle2,
   FileText,
   ArrowRight,
   Sparkles,
   Briefcase,
-  Upload
+  Upload,
 } from "lucide-react";
-import { mockJobMatches, mockStats } from "../data/mockData";
 import { Link } from "react-router";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { motion } from "motion/react";
+import { getJobMatches, type JobMatch } from "../../lib/api";
 
-const chartData = [
-  { name: "Mon", applications: 4 },
-  { name: "Tue", applications: 7 },
-  { name: "Wed", applications: 5 },
-  { name: "Thu", applications: 9 },
-  { name: "Fri", applications: 6 },
-  { name: "Sat", applications: 3 },
-  { name: "Sun", applications: 2 },
-];
+function buildChartDataFromMatches(matches: JobMatch[]): { name: string; applications: number }[] {
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const today = new Date();
+  const result: { name: string; applications: number }[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().slice(0, 10);
+    const count = matches.filter((m) => {
+      const created = m.created_at?.slice(0, 10);
+      return created === dateStr;
+    }).length;
+    const label = `${dayNames[d.getDay()]} ${d.getDate()}`;
+    result.push({ name: label, applications: count });
+  }
+  return result;
+}
 
 const containerVariants = {
   hidden: { opacity: 0 },
   visible: {
     opacity: 1,
-    transition: {
-      staggerChildren: 0.1
-    }
-  }
+    transition: { staggerChildren: 0.1 },
+  },
 };
 
 const itemVariants = {
   hidden: { opacity: 0, y: 20 },
-  visible: { 
-    opacity: 1, 
+  visible: {
+    opacity: 1,
     y: 0,
-    transition: { duration: 0.5 }
-  }
+    transition: { duration: 0.5 },
+  },
 };
 
+function toDisplayMatch(j: JobMatch) {
+  return {
+    id: String(j.id),
+    title: j.title,
+    company: j.company,
+    location: j.location,
+    matchScore: j.match_score,
+    interviewProbability: j.interview_probability,
+    salary: j.salary,
+    postedDate: j.posted_date ?? "",
+    source: j.source,
+    skills: j.skills ?? [],
+    missingSkills: j.missing_skills ?? [],
+  };
+}
+
 export function Dashboard() {
-  const topMatches = mockJobMatches.slice(0, 3);
+  const [matches, setMatches] = useState<JobMatch[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getJobMatches()
+      .then(setMatches)
+      .catch(() => toast.error("Failed to load matches"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const topMatches = matches.slice(0, 3).map(toDisplayMatch);
+  const totalMatches = matches.length;
+  const avgScore = totalMatches > 0
+    ? Math.round(matches.reduce((s, m) => s + m.match_score, 0) / totalMatches)
+    : 0;
+  const highProbCount = matches.filter((m) => m.interview_probability >= 70).length;
 
   return (
     <div className="flex flex-col h-full overflow-auto">
-      <Header 
-        title="Dashboard" 
+      <Header
+        title="Dashboard"
         subtitle="Welcome back! Here's your job search overview."
       />
-      
+
       {/* Mobile Resume Upload Banner */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -79,10 +118,10 @@ export function Dashboard() {
           </div>
         </Link>
       </motion.div>
-      
+
       <div className="flex-1 p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 pb-20 lg:pb-8">
         {/* Stats Cards */}
-        <motion.div 
+        <motion.div
           variants={containerVariants}
           initial="hidden"
           animate="visible"
@@ -97,17 +136,17 @@ export function Dashboard() {
                 <Target className="w-4 h-4 text-emerald-600" />
               </CardHeader>
               <CardContent>
-                <motion.div 
+                <motion.div
                   initial={{ scale: 0.5, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
                   transition={{ delay: 0.3, type: "spring", stiffness: 200 }}
                   className="text-3xl font-bold text-gray-900 dark:text-gray-100"
                 >
-                  {mockStats.totalMatches}
+                  {loading ? "—" : totalMatches}
                 </motion.div>
                 <p className="text-xs text-green-600 dark:text-green-500 mt-1 flex items-center gap-1">
                   <TrendingUp className="w-3 h-3" />
-                  +12% from last week
+                  AI-powered matches
                 </p>
               </CardContent>
             </Card>
@@ -122,15 +161,15 @@ export function Dashboard() {
                 <Sparkles className="w-4 h-4 text-purple-600" />
               </CardHeader>
               <CardContent>
-                <motion.div 
+                <motion.div
                   initial={{ scale: 0.5, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
                   transition={{ delay: 0.4, type: "spring", stiffness: 200 }}
                   className="text-3xl font-bold text-gray-900 dark:text-gray-100"
                 >
-                  {mockStats.averageMatchScore}%
+                  {loading ? "—" : `${avgScore}%`}
                 </motion.div>
-                <Progress value={mockStats.averageMatchScore} className="mt-2 h-2" />
+                <Progress value={avgScore} className="mt-2 h-2" />
               </CardContent>
             </Card>
           </motion.div>
@@ -144,13 +183,13 @@ export function Dashboard() {
                 <CheckCircle2 className="w-4 h-4 text-green-600" />
               </CardHeader>
               <CardContent>
-                <motion.div 
+                <motion.div
                   initial={{ scale: 0.5, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
                   transition={{ delay: 0.5, type: "spring", stiffness: 200 }}
                   className="text-3xl font-bold text-gray-900 dark:text-gray-100"
                 >
-                  {mockStats.highProbabilityJobs}
+                  {loading ? "—" : highProbCount}
                 </motion.div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   Jobs with 70%+ interview chance
@@ -168,15 +207,18 @@ export function Dashboard() {
                 <FileText className="w-4 h-4 text-orange-600" />
               </CardHeader>
               <CardContent>
-                <motion.div 
+                <motion.div
                   initial={{ scale: 0.5, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
                   transition={{ delay: 0.6, type: "spring", stiffness: 200 }}
                   className="text-3xl font-bold text-gray-900 dark:text-gray-100"
                 >
-                  {mockStats.resumeScore}%
+                  {avgScore || "—"}%
                 </motion.div>
-                <Link to="/dashboard/insights" className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline mt-1 inline-block">
+                <Link
+                  to="/dashboard/insights"
+                  className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline mt-1 inline-block"
+                >
                   View improvements →
                 </Link>
               </CardContent>
@@ -185,28 +227,27 @@ export function Dashboard() {
         </motion.div>
 
         {/* Activity Chart and AI Insights */}
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4, duration: 0.6 }}
           className="grid grid-cols-1 lg:grid-cols-3 gap-6"
         >
-          {/* Activity Chart */}
           <Card className="lg:col-span-2 hover:shadow-lg transition-shadow duration-300">
             <CardHeader>
               <CardTitle>Application Activity</CardTitle>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={chartData}>
+                <BarChart data={buildChartDataFromMatches(matches)}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="name" stroke="#888" fontSize={12} />
                   <YAxis stroke="#888" fontSize={12} />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: 'white', 
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '8px'
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "white",
+                      border: "1px solid #e5e7eb",
+                      borderRadius: "8px",
                     }}
                   />
                   <Bar dataKey="applications" fill="#3b82f6" radius={[8, 8, 0, 0]} />
@@ -215,7 +256,6 @@ export function Dashboard() {
             </CardContent>
           </Card>
 
-          {/* AI Insights */}
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -229,16 +269,9 @@ export function Dashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <p className="text-sm text-gray-700 dark:text-gray-300">
-                    Your resume is performing well, but adding <span className="font-semibold">GraphQL</span> and <span className="font-semibold">Kubernetes</span> could increase matches by 23%.
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm text-gray-700 dark:text-gray-300">
-                    Best time to apply: <span className="font-semibold">Tuesday-Thursday, 9-11 AM</span>
-                  </p>
-                </div>
+                <p className="text-sm text-gray-700 dark:text-gray-300">
+                  Upload your resume to get AI-powered job matches and improvement suggestions.
+                </p>
                 <Button className="w-full bg-emerald-600 hover:bg-emerald-700 transition-all hover:scale-105" asChild>
                   <Link to="/dashboard/insights">
                     View All Insights
@@ -264,41 +297,58 @@ export function Dashboard() {
               </Button>
             </CardHeader>
             <CardContent className="space-y-4">
-              {topMatches.map((job, index) => (
-                <motion.div
-                  key={job.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.8 + index * 0.1, duration: 0.5 }}
-                  whileHover={{ scale: 1.02, transition: { duration: 0.2 } }}
-                  className="flex items-start gap-4 p-4 border border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700 hover:bg-blue-50/50 dark:hover:bg-blue-950/50 transition-all cursor-pointer"
-                >
-                  <div className="w-12 h-12 bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-900 dark:to-teal-900 flex items-center justify-center flex-shrink-0">
-                    <Briefcase className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
-                  </div>
-                  
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-2">
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-gray-900 dark:text-gray-100">{job.title}</h3>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">{job.company} • {job.location}</p>
-                      </div>
-                      <Badge className="bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900 w-fit">
-                        {job.matchScore}% Match
-                      </Badge>
+              {loading ? (
+                <div className="py-8 text-center text-gray-500">Loading...</div>
+              ) : topMatches.length === 0 ? (
+                <div className="py-8 text-center text-gray-500">
+                  <p>No matches yet. Upload your resume and scan for jobs.</p>
+                  <Link to="/dashboard/resume" className="text-emerald-600 hover:underline mt-2 inline-block">
+                    Upload Resume
+                  </Link>
+                </div>
+              ) : (
+                topMatches.map((job, index) => (
+                  <motion.div
+                    key={job.id}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.8 + index * 0.1, duration: 0.5 }}
+                    whileHover={{ scale: 1.02, transition: { duration: 0.2 } }}
+                    className="flex items-start gap-4 p-4 border border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700 hover:bg-blue-50/50 dark:hover:bg-blue-950/50 transition-all cursor-pointer"
+                  >
+                    <div className="w-12 h-12 bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-900 dark:to-teal-900 flex items-center justify-center flex-shrink-0">
+                      <Briefcase className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
                     </div>
-                    
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mt-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Interview Probability:</span>
-                        <span className="text-xs sm:text-sm font-semibold text-emerald-600 dark:text-emerald-400">{job.interviewProbability}%</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-2">
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-gray-900 dark:text-gray-100">{job.title}</h3>
+                          <p className="text-sm text-gray-600 dark:text-gray-400">
+                            {job.company} • {job.location}
+                          </p>
+                        </div>
+                        <Badge className="bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900 w-fit">
+                          {job.matchScore}% Match
+                        </Badge>
                       </div>
-                      <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{job.salary}</div>
-                      <Badge variant="outline" className="text-xs w-fit">{job.source}</Badge>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mt-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
+                            Interview Probability:
+                          </span>
+                          <span className="text-xs sm:text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                            {job.interviewProbability}%
+                          </span>
+                        </div>
+                        <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{job.salary}</div>
+                        <Badge variant="outline" className="text-xs w-fit">
+                          {job.source}
+                        </Badge>
+                      </div>
                     </div>
-                  </div>
-                </motion.div>
-              ))}
+                  </motion.div>
+                ))
+              )}
             </CardContent>
           </Card>
         </motion.div>

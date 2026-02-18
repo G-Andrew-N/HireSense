@@ -1,4 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router";
+import { useAuth } from "../../lib/auth-context";
 import { 
   LayoutDashboard, 
   FileText, 
@@ -23,10 +24,10 @@ const navigation = [
 export function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
-  const handleLogout = () => {
-    // In production, this would clear auth tokens, etc.
-    localStorage.removeItem("isAuthenticated");
+  const handleLogout = async () => {
+    await logout();
     navigate("/login");
   };
 
@@ -72,8 +73,10 @@ export function Sidebar() {
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600" />
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">Demo User</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">demo@hiresense.ai</p>
+            <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+              {user?.first_name && user?.last_name ? `${user.first_name} ${user.last_name}` : user?.first_name || user?.email || "User"}
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user?.email ?? ""}</p>
           </div>
         </div>
         <motion.div
