@@ -179,27 +179,75 @@ def _fetch_indeed_jobs_for_user(user_id: int, query_override: str | None = None)
     resume = _get_current_resume(user)
     if not resume and not query_override:
         return {"stored": 0}
+
     from .job_sources.registry import get_fetcher
     from .resume_utils import get_job_search_query
+    try:
+        from ai.profession import get_profession_and_industry
+    except Exception:
+        # fallback to old behavior
+        profession = query_override or (get_job_search_query(resume) if resume else "") or "jobs"
+        industry = "general"
+    else:
+        profession, industry = get_profession_and_industry(resume.raw_text if resume else (query_override or ""))
 
-    query = (query_override or (get_job_search_query(resume) if resume else "") or "jobs").strip() or "jobs"
-    fetcher = get_fetcher(
-        source_type="indeed",
-        url="",
-        source_name=SOURCE_RESUME_BASED,
-        config={"keywords": query, "location": "Remote"},
-    )
-    result = fetcher.fetch()
-    if result.error:
-        if "SAXParseException" in result.error or "Parse error" in (result.error or ""):
-            logger.info("Indeed (Resume) returned non-RSS for user %s (q=%s); skipping.", user_id, query)
-        else:
-            logger.warning("Indeed (Resume) fetch failed for user %s (q=%s): %s", user_id, query, result.error)
-        return {"query": query, "stored": 0}
-    stored = sum(1 for raw in result.jobs if _upsert_job_posting(raw) is not None)
-    if stored:
-        logger.info("Fetched %d Indeed (Resume) jobs for user %s (query=%s)", stored, user_id, query)
-    return {"query": query, "stored": stored}
+    query = (query_override or profession or (get_job_search_query(resume) if resume else "") or "jobs").strip() or "jobs"
+
+    # Build list of candidate fetchers based on industry
+    candidates = []
+    location_filter = "Remote" if industry in ("software", "tech", "developer") else ""
+    
+    # Primary: Remotive API (free, no auth required) for remote positions
+    candidates.append({
+        "source_type": "remotive",
+        "source_name": "Remotive",
+        "config": {"keywords": query}
+    })
+
+    # Industry-specific fallbacks
+    if industry in ("software", "tech", "developer"):
+        # We Work Remotely is useful for remote dev roles
+        candidates.append({"source_type": "rss", "source_name": SOURCE_WWR_RESUME, "url": WWR_PROGRAMMING_RSS, "config": {}})
+    elif industry in ("real_estate", "realestate", "real-estate"):
+        # For real estate, try Remotive with broader keywords
+        candidates.append({
+            "source_type": "remotive",
+            "source_name": "Remotive (Real Estate)",
+            "config": {"keywords": f"{query} real estate"}
+        })
+    elif industry in ("healthcare", "nursing", "medical"):
+        # For healthcare, try Remotive
+        candidates.append({
+            "source_type": "remotive",
+            "source_name": "Remotive (Healthcare)",
+            "config": {"keywords": f"{query} healthcare"}
+        })
+    else:
+        # Generic fallback
+        candidates.append({
+            "source_type": "remotive",
+            "source_name": "Remotive (Alternate)",
+            "config": {"keywords": query}
+        })
+
+    total_stored = 0
+    for c in candidates:
+        try:
+            url = c.get("url", "")
+            cfg = c.get("config", {})
+            fetcher = get_fetcher(c["source_type"], url, c.get("source_name", "Jobs"), cfg)
+            result = fetcher.fetch()
+            if result.error:
+                logger.info("Fetch candidate %s returned error: %s", c.get("source_name"), result.error)
+                continue
+            stored = sum(1 for raw in result.jobs if _upsert_job_posting(raw) is not None)
+            total_stored += stored
+            if stored:
+                logger.info("Fetched %d jobs from %s for user %s (q=%s)", stored, c.get("source_name"), user_id, query)
+        except Exception as e:
+            logger.exception("Candidate fetch failed: %s", e)
+
+    return {"query": query, "stored": total_stored}
 
 
 def _run_match_analysis_for_user(user_id: int) -> dict:
@@ -386,3 +434,40 @@ def run_match_analysis_for_all_users(self) -> dict:
         r = _run_match_analysis_for_user(user.id)
         total += r.get("matches_created", 0)
     return {"users_processed": users_with_resumes.count(), "total_matches": total}
+
+
+@shared_task(bind=True, name="core.tasks.generate_insights_for_user")
+def generate_insights_for_user(self, user_id: int) -> dict:
+    """Generate resume insights for the user's current resume and replace existing insights."""
+    try:
+        user = User.objects.get(pk=user_id)
+    except User.DoesNotExist:
+        return {"error": "User not found"}
+
+    resume = _get_current_resume(user)
+    if not resume or not resume.raw_text:
+        return {"error": "No resume with text"}
+
+    try:
+        from ai.insight_generator import generate_insights
+
+        insights = generate_insights(resume.raw_text, resume.parsed_content or {})
+        if insights is None:
+            return {"user_id": user_id, "created": 0}
+        # Replace existing insights for user
+        ResumeInsight.objects.filter(user=user).delete()
+        created = 0
+        for item in insights:
+            ResumeInsight.objects.create(
+                user=user,
+                resume=resume,
+                category=item["category"],
+                title=item["title"],
+                description=item["description"],
+                impact=item.get("impact", "low"),
+            )
+            created += 1
+        return {"user_id": user_id, "created": created}
+    except Exception as e:
+        logger.exception("Insight generation failed for user %s: %s", user_id, e)
+        return {"user_id": user_id, "error": str(e)}

@@ -55,3 +55,46 @@ def get_profession_for_job_search(resume_text: str) -> str:
     except Exception as e:
         logger.warning("get_profession_for_job_search failed: %s", e)
         return "jobs"
+
+
+def get_profession_and_industry(resume_text: str) -> tuple[str, str]:
+    """Return (profession, industry) where industry is a short tag (e.g. 'software', 'real_estate').
+    Falls back to simple heuristics if AI call fails."""
+    if not (resume_text or "").strip():
+        return "jobs", "general"
+    text = resume_text.strip()[:12000]
+    cache_key = "profession_industry:v1:" + hashlib.sha256(text.encode()).hexdigest()
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached.get("profession", "jobs"), cached.get("industry", "general")
+
+    SYSTEM_PROMPT_EXT = (
+        SYSTEM_PROMPT
+        + "\nAdditionally, return an 'industry' short tag suitable for choosing job sources, e.g. 'software', 'real_estate', 'healthcare', 'marketing', 'education', or 'general'. Return JSON: {\"profession\": \"\", \"industry\": \"\"}."
+    )
+
+    try:
+        content = chat_completion_json(
+            system=SYSTEM_PROMPT_EXT,
+            user=USER_PROMPT_TEMPLATE.format(resume_text=text),
+            temperature=0.2,
+        )
+        data = json.loads(content)
+        profession = (data.get("profession") or "").strip()
+        industry = (data.get("industry") or "").strip().lower().replace(" ", "_")
+        if not profession:
+            profession = "jobs"
+        if not industry:
+            industry = "general"
+        # Normalize profession similarly
+        words = [w for w in profession.replace("-", " ").split() if w.isalnum()][:4]
+        prof_norm = " ".join(words) if words else "jobs"
+        cache.set(cache_key, {"profession": prof_norm, "industry": industry}, CACHE_TTL)
+        return prof_norm, industry
+    except Exception as e:
+        logger.warning("get_profession_and_industry failed: %s", e)
+        # Fallback heuristics
+        prof = get_profession_for_job_search(resume_text)
+        ind = "software" if _is_developer_profession(prof) else "general"
+        cache.set(cache_key, {"profession": prof, "industry": ind}, CACHE_TTL)
+        return prof, ind

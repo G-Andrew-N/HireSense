@@ -1,8 +1,9 @@
-import { Bell, Search } from "lucide-react";
+import { Bell, Search, Loader2 } from "lucide-react";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { ThemeToggle } from "./ThemeToggle";
 import { useNavigate } from "react-router";
+import { useScan } from "../../lib/scan-context";
 
 interface HeaderProps {
   title: string;
@@ -21,6 +22,23 @@ export function Header({ title, subtitle, showSearch = false }: HeaderProps) {
       </div>
       
       <div className="flex items-center gap-2 sm:gap-4">
+        {/* Global scanning indicator */}
+        {(() => {
+          try {
+            const scan = useScan();
+            if (scan.isScanning) {
+              return (
+                <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-emerald-50 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300 rounded-full text-xs">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Scanning</span>
+                </div>
+              );
+            }
+          } catch {
+            /* ignore when not inside provider */
+          }
+          return null;
+        })()}
         {showSearch && (
           <div className="relative flex-1 sm:flex-initial sm:w-64 lg:w-80">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -37,7 +55,7 @@ export function Header({ title, subtitle, showSearch = false }: HeaderProps) {
           variant="ghost" 
           size="icon" 
           className="relative flex-shrink-0 hidden lg:flex"
-          onClick={() => navigate("/notifications")}
+          onClick={() => navigate("notifications")}
         >
           <Bell className="w-5 h-5 text-gray-600 dark:text-gray-400" />
           <span className="absolute top-2 right-2 w-2 h-2 bg-blue-600 rounded-full" />

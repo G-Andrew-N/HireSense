@@ -100,8 +100,49 @@ def _chat_groq(system: str, user: str, temperature: float) -> str:
         raise ValueError("GROQ_API_KEY must be set when AI_PROVIDER=groq")
     client = Groq(api_key=api_key)
 
+    # Simple distributed RPM limiter using Django cache (works when CACHE_URL is redis://...)
+    # Prevents exceeding Groq RPM limits by gating requests per minute.
+    from django.core.cache import cache
+    from django.utils import timezone
+
+    def _reserve_slot(attempts=1):
+        """Try to reserve a slot for this minute. Returns (allowed: bool, current_count:int, limit:int)."""
+        limit = int(getattr(settings, "GROQ_RPM", 30))
+        key = f"groq_rpm:{timezone.now().strftime('%Y%m%d%H%M')}"
+        try:
+            # Ensure key exists with 80s TTL to cover minute boundary
+            added = cache.add(key, 0, timeout=80)
+            # Some cache backends (locmem) may not implement incr; guard it
+            try:
+                current = cache.incr(key, 1)
+            except Exception:
+                # fallback: read/replace (not atomic) — best-effort
+                current = (cache.get(key) or 0) + 1
+                cache.set(key, current, timeout=80)
+            if current > limit:
+                return False, current, limit
+            return True, current, limit
+        except Exception:
+            # If cache not available or incr unsupported, allow by default
+            return True, 0, limit
+
     last_err = None
-    for attempt in range(3):
+    for attempt in range(6):
+        # Try to reserve a slot before making the request
+        allowed, current, limit = _reserve_slot()
+        if not allowed:
+            # If we're over limit, wait a short time proportional to attempts
+            backoff = min(5 * (attempt + 1), 30)
+            logger.warning(
+                "Groq RPM limit reached (%d/%d). Waiting %ds before attempt %d.",
+                current,
+                limit,
+                backoff,
+                attempt + 1,
+            )
+            time.sleep(backoff)
+            continue
+
         try:
             response = client.chat.completions.create(
                 model="llama-3.1-8b-instant",
@@ -115,19 +156,31 @@ def _chat_groq(system: str, user: str, temperature: float) -> str:
             return response.choices[0].message.content or ""
         except RateLimitError as e:
             last_err = e
-            wait = 25  # Groq free tier resets TPM/RPM ~every 20-30s
-            if attempt < 2:
-                logger.warning("Groq rate limit (TPM/RPM), waiting %ds before retry: %s", wait, e)
+            # Try to parse Retry info from message; fall back to 25s
+            wait = 25
+            try:
+                # message may include seconds like 'Please try again in 17.27s'
+                msg = str(e)
+                import re
+
+                m = re.search(r"in (\d+(?:\.\d+)?)s", msg)
+                if m:
+                    wait = max(5, int(float(m.group(1))))
+            except Exception:
+                pass
+            if attempt < 5:
+                logger.warning("Groq rate limit, waiting %ds before retry: %s", wait, e)
                 time.sleep(wait)
+                continue
             else:
                 raise
         except APIConnectionError as e:
-            # DNS/network transient failure (e.g. "Temporary failure in name resolution")
             last_err = e
-            wait = 5 * (attempt + 1)  # 5s, 10s
-            if attempt < 2:
+            wait = 5 * (attempt + 1)
+            if attempt < 5:
                 logger.warning("Groq connection error, retry in %ds: %s", wait, e)
                 time.sleep(wait)
+                continue
             else:
                 raise
     raise last_err

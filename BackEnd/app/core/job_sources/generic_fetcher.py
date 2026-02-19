@@ -9,6 +9,7 @@ from datetime import date
 from urllib.robotparser import RobotFileParser
 from urllib.parse import urljoin, urlparse
 
+import time
 import requests
 from bs4 import BeautifulSoup
 
@@ -42,16 +43,37 @@ class GenericJobFetcher(BaseJobFetcher):
         if not _can_fetch(self.url):
             return JobFetcherResult(jobs=[], error="Blocked by robots.txt")
 
-        try:
-            resp = requests.get(
-                self.url,
-                headers={"User-Agent": USER_AGENT},
-                timeout=30,
-            )
-            resp.raise_for_status()
-        except requests.RequestException as e:
-            logger.exception("Generic fetch failed for %s: %s", self.url, e)
-            return JobFetcherResult(jobs=[], error=str(e))
+        # Retry on transient errors (429 Too Many Requests) with exponential backoff
+        max_attempts = self.config.get("max_attempts", 3)
+        backoff_base = float(self.config.get("backoff_base", 2))
+        resp = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                resp = requests.get(
+                    self.url,
+                    headers={"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"},
+                    timeout=30,
+                )
+                if resp.status_code == 429:
+                    # Honor Retry-After if provided, otherwise exponential backoff
+                    ra = resp.headers.get("Retry-After")
+                    wait = int(ra) if ra and ra.isdigit() else (backoff_base ** attempt)
+                    logger.warning("Received 429 from %s; retrying after %s seconds (attempt %d)", self.url, wait, attempt)
+                    time.sleep(wait)
+                    continue
+                resp.raise_for_status()
+                break
+            except requests.RequestException as e:
+                # If last attempt, return error
+                if attempt == max_attempts:
+                    logger.exception("Generic fetch failed for %s: %s", self.url, e)
+                    return JobFetcherResult(jobs=[], error=str(e))
+                wait = backoff_base ** attempt
+                logger.warning("Generic fetch transient error for %s: %s (attempt %d), retrying in %s seconds", self.url, e, attempt, wait)
+                time.sleep(wait)
+
+        if resp is None:
+            return JobFetcherResult(jobs=[], error="No response after retries")
 
         try:
             soup = BeautifulSoup(resp.text, "html.parser")

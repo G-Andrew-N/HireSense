@@ -71,7 +71,15 @@ export function Sidebar() {
       {/* Footer */}
       <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-800 space-y-3">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600" />
+          {user?.avatar ? (
+            <img
+              src={user.avatar}
+              alt={user?.first_name && user?.last_name ? `${user.first_name} ${user.last_name}` : user?.email ?? "User"}
+              className="w-8 h-8 rounded-full object-cover"
+            />
+          ) : (
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600" />
+          )}
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
               {user?.first_name && user?.last_name ? `${user.first_name} ${user.last_name}` : user?.first_name || user?.email || "User"}

@@ -70,6 +70,19 @@ export function JobMatches() {
     return () => { mountedRef.current = false; };
   }, [load]);
 
+  // Listen for global scan-start events to clear matches immediately
+  useEffect(() => {
+    const onScanStart = () => {
+      if (mountedRef.current) {
+        setMatches([]);
+        setScanning(true);
+        toast.info("Scanning for jobs based on your latest resume...");
+      }
+    };
+    window.addEventListener("hiresense:scan-start", onScanStart);
+    return () => window.removeEventListener("hiresense:scan-start", onScanStart);
+  }, [setScanning]);
+
   // When returning to this page while scan is in progress, poll for new matches
   useEffect(() => {
     if (!isScanning) return;

@@ -427,9 +427,20 @@ class ResumeViewSet(ModelViewSet):
         return [MultiPartParser(), FormParser()]
 
     def create(self, request, *args, **kwargs):
-        """Wrap create to log any exception with full traceback."""
+        """Handle upload and include match analysis status in the response."""
         try:
-            return super().create(request, *args, **kwargs)
+            # Standard DRF create flow but capture match analysis info set in perform_create
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            # reset any previous info
+            if hasattr(self, "match_analysis"):
+                delattr(self, "match_analysis")
+            self.perform_create(serializer)
+            headers = self.get_success_headers(serializer.data)
+            data = dict(serializer.data)
+            if hasattr(self, "match_analysis"):
+                data["match_analysis"] = getattr(self, "match_analysis")
+            return Response(data, status=status.HTTP_201_CREATED, headers=headers)
         except Exception as e:
             RESUME_LOG.exception(
                 "Resume upload error (full traceback above): %s",
@@ -453,13 +464,33 @@ class ResumeViewSet(ModelViewSet):
             RESUME_LOG.exception("Resume parsing failed after upload: %s", e, exc_info=True)
             return
         # Regenerate job listings to reflect the new resume (insights already regenerated in pipeline)
+        # Clear any existing job matches for this user so the UI reflects a fresh search
         try:
-            from .tasks import run_match_analysis_for_user
-
-            run_match_analysis_for_user.delay(instance.user_id)
+            JobMatch.objects.filter(user=instance.user).delete()
         except Exception as e:
-            # Celery/Redis may be unavailable (e.g. dev without Redis); upload still succeeds
-            RESUME_LOG.warning("Could not enqueue job scan after resume upload: %s", e)
+            RESUME_LOG.warning("Failed to clear previous job matches for user %s: %s", instance.user_id, e)
+
+        # Enqueue match analysis and insights generation asynchronously; return quickly
+        self.match_analysis = {"started": False}
+        try:
+            from .tasks import run_match_analysis_for_user, generate_insights_for_user
+        except Exception as e:
+            RESUME_LOG.warning("Could not import match analysis/insights tasks: %s", e)
+            self.match_analysis = {"started": False, "reason": "import_failed", "error": str(e)}
+            return
+
+        try:
+            task = run_match_analysis_for_user.delay(instance.user_id)
+            insight_task = generate_insights_for_user.delay(instance.user_id)
+            self.match_analysis = {
+                "started": True,
+                "async": True,
+                "task_id": getattr(task, "id", None),
+                "insights_task_id": getattr(insight_task, "id", None),
+            }
+        except Exception as e:
+            RESUME_LOG.warning("Could not enqueue job scan or insight generation after resume upload: %s", e)
+            self.match_analysis = {"started": False, "reason": "enqueue_failed", "error": str(e)}
 
     def perform_destroy(self, instance):
         if instance.file:
@@ -473,8 +504,39 @@ class ResumeViewSet(ModelViewSet):
         profile, _ = UserProfile.objects.get_or_create(user=request.user, defaults={})
         profile.primary_resume = resume
         profile.save(update_fields=["primary_resume"])
+        # Clear previous job matches so UI reflects fresh search
+        try:
+            JobMatch.objects.filter(user=request.user).delete()
+        except Exception as e:
+            RESUME_LOG.warning("Failed to clear previous job matches for user %s when setting primary resume: %s", request.user.id, e)
+
+        match_analysis = {"started": False}
+        try:
+            from .tasks import run_match_analysis_for_user, _run_match_analysis_for_user
+        except Exception as e:
+            RESUME_LOG.warning("Could not import match analysis tasks when setting primary resume: %s", e)
+            match_analysis = {"started": False, "reason": "import_failed", "error": str(e)}
+            return Response(
+                {**ResumeSerializer(resume, context={"request": request}).data, "match_analysis": match_analysis},
+                status=status.HTTP_200_OK,
+            )
+
+        try:
+            # Enqueue both match analysis and insights generation asynchronously. Do not run synchronously
+            task = run_match_analysis_for_user.delay(request.user.id)
+            insight_task = generate_insights_for_user.delay(request.user.id)
+            match_analysis = {
+                "started": True,
+                "async": True,
+                "task_id": getattr(task, "id", None),
+                "insights_task_id": getattr(insight_task, "id", None),
+            }
+        except Exception as e:
+            RESUME_LOG.warning("Could not enqueue job scan or insight generation after setting primary resume: %s", e)
+            match_analysis = {"started": False, "reason": "enqueue_failed", "error": str(e)}
+
         return Response(
-            ResumeSerializer(resume, context={"request": request}).data,
+            {**ResumeSerializer(resume, context={"request": request}).data, "match_analysis": match_analysis},
             status=status.HTTP_200_OK,
         )
 
@@ -623,3 +685,37 @@ class ResumeInsightViewSet(UpdateModelMixin, ReadOnlyModelViewSet):
         qs = ResumeInsight.objects.filter(user=request.user).order_by("category", "-created_at")
         data = ResumeInsightSerializer(qs, many=True).data
         return Response(data, status=status.HTTP_201_CREATED)
+
+
+class JobSourcesView(APIView):
+    """Return information about active job sources used for matching."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """Get list of active job sources and their status."""
+        sources = [
+            {
+                "name": "Remotive",
+                "type": "api",
+                "description": "Remote job search API (free, no authentication required)",
+                "status": "active",
+                "coverage": "Remote positions across all industries globally",
+            },
+            {
+                "name": "We Work Remotely",
+                "type": "rss",
+                "description": "Specialized remote job board",
+                "status": "active",
+                "coverage": "Remote technology/programming roles",
+            },
+            {
+                "name": "Indeed RSS",
+                "type": "rss",
+                "description": "Indeed job listings",
+                "status": "disabled",
+                "coverage": "All industries",
+                "note": "Disabled due to anti-bot protection (403/404 errors)",
+            },
+        ]
+        return Response({"sources": sources, "primary": "Remotive"}, status=status.HTTP_200_OK)

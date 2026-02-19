@@ -13,7 +13,8 @@ import {
   Loader2,
   Trash2,
 } from "lucide-react";
-import { getResumes, uploadResume, downloadResume, deleteResume, setResumePrimary, type Resume } from "../../lib/api";
+import { getResumes, uploadResume, downloadResume, deleteResume, setResumePrimary, type Resume, type MatchAnalysisStatus } from "../../lib/api";
+import { useScan } from "../../lib/scan-context";
 
 export function Resume() {
   const [resumes, setResumes] = useState<Resume[]>([]);
@@ -41,13 +42,26 @@ export function Resume() {
   const resumeDisplayName = (r: Resume) =>
     r.original_filename || r.file?.split("/").pop() || "Resume";
 
+  const { setScanning } = useScan();
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
     try {
-      await uploadResume(file);
+      const resp = await uploadResume(file) as Resume & { match_analysis?: MatchAnalysisStatus };
       toast.success("Resume uploaded successfully");
+      // If backend started async match analysis, set scanning so JobMatches polls
+      if (resp.match_analysis?.started) {
+        if (resp.match_analysis.async) {
+          setScanning(true);
+          window.dispatchEvent(new CustomEvent("hiresense:scan-start"));
+          toast.info("Match analysis started — scanning for jobs and regenerating insights...");
+        } else {
+          setScanning(false);
+          toast.success("Match analysis completed");
+        }
+      }
       load();
     } catch (err: unknown) {
       const body = (err as { body?: { file?: string[]; detail?: string | string[] } })?.body;
@@ -87,9 +101,20 @@ export function Resume() {
   const handleSetPrimary = async (r: Resume) => {
     setSettingPrimaryId(r.id);
     try {
-      await setResumePrimary(r.id);
+      const resp = await setResumePrimary(r.id) as Resume & { match_analysis?: MatchAnalysisStatus };
       toast.success(`"${resumeDisplayName(r)}" is now used for job matches and insights`);
-      load();
+      // Optimistically update local state: mark this resume current without reloading from server
+      setResumes((prev) => prev.map((x) => ({ ...x, is_primary: x.id === r.id })));
+      if (resp.match_analysis?.started) {
+        if (resp.match_analysis.async) {
+          setScanning(true);
+          window.dispatchEvent(new CustomEvent("hiresense:scan-start"));
+          toast.info("Match analysis started — scanning for jobs and regenerating insights...");
+        } else {
+          setScanning(false);
+          toast.success("Match analysis completed");
+        }
+      }
     } catch {
       toast.error("Failed to set as current");
     } finally {

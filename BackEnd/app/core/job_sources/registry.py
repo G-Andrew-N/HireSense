@@ -1,4 +1,5 @@
 """Registry and orchestration for job fetchers."""
+from .adzuna_fetcher import RemotiveFetcher
 from .base import BaseJobFetcher, JobFetcherResult
 from .generic_fetcher import GenericJobFetcher
 from .provider_stubs import (
@@ -14,6 +15,7 @@ _FETCHER_MAP = {
     "rss": RSSJobFetcher,
     "generic": GenericJobFetcher,
     "indeed": IndeedFetcher,
+    "remotive": RemotiveFetcher,
     "linkedin": LinkedInFetcher,
     "glassdoor": GlassdoorFetcher,
     "ziprecruiter": ZipRecruiterFetcher,

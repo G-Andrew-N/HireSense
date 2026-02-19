@@ -14,11 +14,33 @@ class RSSJobFetcher(BaseJobFetcher):
     def fetch(self) -> JobFetcherResult:
         try:
             import feedparser
+            import requests
+            import time
 
-            feed = feedparser.parse(
-                self.url,
-                request_headers={"User-Agent": "HireSense/1.0 (Job Aggregator)"},
-            )
+            # Use requests first so we can handle 429 / Retry-After headers
+            max_attempts = self.config.get("max_attempts", 3)
+            backoff_base = float(self.config.get("backoff_base", 2))
+            resp = None
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    resp = requests.get(self.url, headers={"User-Agent": "HireSense/1.0 (Job Aggregator)"}, timeout=20)
+                    if resp.status_code == 429:
+                        ra = resp.headers.get("Retry-After")
+                        wait = int(ra) if ra and ra.isdigit() else (backoff_base ** attempt)
+                        logger.warning("RSS fetch 429 for %s; retrying after %s seconds (attempt %d)", self.url, wait, attempt)
+                        time.sleep(wait)
+                        continue
+                    resp.raise_for_status()
+                    break
+                except requests.RequestException as e:
+                    if attempt == max_attempts:
+                        logger.exception("RSS HTTP fetch failed for %s: %s", self.url, e)
+                        return JobFetcherResult(jobs=[], error=str(e))
+                    wait = backoff_base ** attempt
+                    logger.warning("RSS HTTP transient error for %s: %s (attempt %d), retrying in %s seconds", self.url, e, attempt, wait)
+                    time.sleep(wait)
+
+            feed = feedparser.parse(resp.content if resp is not None else self.url)
         except Exception as e:
             err_str = str(e)
             # Indeed and some sites return HTML instead of RSS, causing XML parse errors; no traceback needed

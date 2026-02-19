@@ -215,6 +215,15 @@ export interface Resume {
   is_primary?: boolean;
 }
 
+export interface MatchAnalysisStatus {
+  started: boolean;
+  async?: boolean;
+  task_id?: string | null;
+  result?: Record<string, unknown> | null;
+  reason?: string;
+  error?: string;
+}
+
 export async function getResumes(): Promise<Resume[]> {
   const data = await apiRequest<Resume[]>('/resumes/');
   return Array.isArray(data) ? data : [];

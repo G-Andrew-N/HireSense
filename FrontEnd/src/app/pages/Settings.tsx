@@ -6,22 +6,25 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
-import { Globe, Plus, Trash2, Bell, Mail, User, Save, Loader2, Camera, Pencil } from "lucide-react";
+import { Globe, Bell, Mail, User, Save, Loader2, Camera, Pencil, CheckCircle, AlertCircle } from "lucide-react";
 import {
-  getJobSites,
-  updateJobSite,
-  createJobSite,
-  deleteJobSite,
   updateProfile,
-  type JobSite,
 } from "../../lib/api";
 import { useAuth } from "../../lib/auth-context";
 
+interface JobSource {
+  name: string;
+  type: string;
+  description: string;
+  status: "active" | "disabled";
+  coverage: string;
+  note?: string;
+}
+
 export function Settings() {
   const { user, setUser } = useAuth();
-  const [jobSites, setJobSites] = useState<JobSite[]>([]);
+  const [jobSources, setJobSources] = useState<JobSource[]>([]);
   const [loading, setLoading] = useState(true);
-  const [newSiteUrl, setNewSiteUrl] = useState("");
   const [saving, setSaving] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
   const [firstName, setFirstName] = useState(user?.first_name ?? "");
@@ -39,56 +42,16 @@ export function Settings() {
 
   const load = () => {
     setLoading(true);
-    getJobSites()
-      .then(setJobSites)
-      .catch(() => toast.error("Failed to load job sites"))
+    fetch("/api/jobs/sources/", { headers: { Authorization: `Bearer ${localStorage.getItem("access")}` } })
+      .then((res) => res.json())
+      .then((data) => setJobSources(data.sources || []))
+      .catch(() => toast.error("Failed to load settings"))
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
     load();
   }, []);
-
-  const toggleSite = async (site: JobSite) => {
-    try {
-      const updated = await updateJobSite(site.id, { enabled: !site.enabled });
-      setJobSites((s) => s.map((x) => (x.id === site.id ? updated : x)));
-      toast.success("Updated");
-    } catch {
-      toast.error("Failed to update");
-    }
-  };
-
-  const removeSite = async (site: JobSite) => {
-    if (site.is_builtin) return;
-    try {
-      await deleteJobSite(site.id);
-      setJobSites((s) => s.filter((x) => x.id !== site.id));
-      toast.success("Site removed");
-    } catch {
-      toast.error("Failed to delete");
-    }
-  };
-
-  const addSite = async () => {
-    const url = newSiteUrl.trim();
-    if (!url) return;
-    try {
-      let name = "";
-      try {
-        name = new URL(url).hostname.replace("www.", "");
-      } catch {
-        name = "Custom";
-      }
-      const created = await createJobSite({ name, url });
-      setJobSites((s) => [created, ...s]);
-      setNewSiteUrl("");
-      toast.success("Site added");
-    } catch (err: unknown) {
-      const msg = (err as { body?: { detail?: string } })?.body?.detail ?? "Failed to add site";
-      toast.error(msg);
-    }
-  };
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -146,75 +109,61 @@ export function Settings() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Globe className="w-5 h-5" />
-                Job Posting Websites
+                Active Job Sources
               </CardTitle>
               <CardDescription>
-                Enable or disable job sources. Built-in sources can be toggled; add custom RSS feed URLs below.
+                Data sources used to find job matches for your professions
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="space-y-4">
               {loading ? (
                 <div className="py-8 flex items-center justify-center">
                   <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
                 </div>
               ) : (
-                <>
-                  <div className="space-y-3">
-                    {jobSites.map((site) => (
+                <div className="space-y-3">
+                  {jobSources.length > 0 ? (
+                    jobSources.map((source) => (
                       <div
-                        key={site.id}
-                        className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                        key={source.name}
+                        className={`flex items-start gap-4 p-4 border rounded-lg transition-colors ${
+                          source.status === "active"
+                            ? "border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20"
+                            : "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/30"
+                        }`}
                       >
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-900 dark:to-teal-900 flex items-center justify-center">
-                            <Globe className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-                          </div>
-                          <div>
-                            <h4 className="font-semibold text-gray-900 dark:text-gray-100">{site.name}</h4>
-                            <p className="text-sm text-gray-500 dark:text-gray-400 truncate max-w-[200px]">{site.url}</p>
-                          </div>
+                        <div className="pt-1">
+                          {source.status === "active" ? (
+                            <CheckCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                          ) : (
+                            <AlertCircle className="w-5 h-5 text-gray-400" />
+                          )}
                         </div>
-                        <div className="flex items-center gap-4">
-                          <Switch
-                            checked={site.enabled}
-                            onCheckedChange={() => toggleSite(site)}
-                          />
-                          {!site.is_builtin && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => removeSite(site)}
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h4 className="font-semibold text-gray-900 dark:text-gray-100">{source.name}</h4>
+                            <span
+                              className={`text-xs px-2 py-1 rounded-full ${
+                                source.status === "active"
+                                  ? "bg-emerald-200 dark:bg-emerald-800 text-emerald-800 dark:text-emerald-200"
+                                  : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+                              }`}
                             >
-                              <Trash2 className="w-4 h-4 text-red-600" />
-                            </Button>
+                              {source.status}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">{source.description}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-500">Coverage: {source.coverage}</p>
+                          {source.note && (
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{source.note}</p>
                           )}
                         </div>
                       </div>
-                    ))}
-                  </div>
-
-                  <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-                    <Label htmlFor="new-site" className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
-                      Add Custom Job Board
-                    </Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="new-site"
-                        placeholder="https://example.com/jobs"
-                        value={newSiteUrl}
-                        onChange={(e) => setNewSiteUrl(e.target.value)}
-                        className="flex-1"
-                      />
-                      <Button onClick={addSite} disabled={saving}>
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add Site
-                      </Button>
-                    </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                      Enter the URL of any job board (RSS feed URL recommended)
-                    </p>
-                  </div>
-                </>
+                    ))
+                  ) : (
+                    <p className="text-sm text-gray-500">No job sources configured</p>
+                  )}
+                </div>
               )}
             </CardContent>
           </Card>

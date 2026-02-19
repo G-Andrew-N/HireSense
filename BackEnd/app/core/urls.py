@@ -18,6 +18,7 @@ urlpatterns = [
     path("jobs/scan/", views.JobScanView.as_view(), name="job-scan"),
     path("jobs/scan/<int:site_id>/", views.JobScanSiteView.as_view(), name="job-scan-site"),
     path("jobs/run-match-analysis/", views.JobMatchAnalysisTriggerView.as_view(), name="job-run-match-analysis"),
+    path("jobs/sources/", views.JobSourcesView.as_view(), name="job-sources"),
     path("", include(router.urls)),
     # Auth
     path("auth/register/", views.RegisterView.as_view(), name="auth-register"),

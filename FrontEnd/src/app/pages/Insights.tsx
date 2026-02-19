@@ -16,6 +16,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { getInsights, generateInsights, markInsightCompleted, type ResumeInsight } from "../../lib/api";
+import { useScan } from "../../lib/scan-context";
 import { motion, AnimatePresence } from "motion/react";
 
 export function Insights() {
@@ -35,6 +36,16 @@ export function Insights() {
   useEffect(() => {
     loadInsights();
   }, []);
+
+  const { isScanning } = useScan();
+
+  useEffect(() => {
+    if (isScanning) {
+      setInsights([]);
+      setLoading(true);
+      toast.info("Regenerating insights for the new resume...");
+    }
+  }, [isScanning]);
 
   const handleGenerate = () => {
     setGenerating(true);
