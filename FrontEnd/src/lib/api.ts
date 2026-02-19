@@ -112,12 +112,26 @@ export interface RegisterResponse extends LoginResponse {}
 export async function register(
   email: string,
   password: string,
-  full_name?: string
+  full_name?: string,
+  avatar?: File
 ): Promise<RegisterResponse> {
-  const data = await apiRequest<RegisterResponse>('/auth/register/', {
-    method: 'POST',
-    body: JSON.stringify({ email, password, full_name }),
-  });
+  let data: RegisterResponse;
+  if (avatar) {
+    const form = new FormData();
+    form.set('email', email);
+    form.set('password', password);
+    if (full_name) form.set('full_name', full_name);
+    form.set('avatar', avatar);
+    data = await apiRequest<RegisterResponse>('/auth/register/', {
+      method: 'POST',
+      body: form,
+    });
+  } else {
+    data = await apiRequest<RegisterResponse>('/auth/register/', {
+      method: 'POST',
+      body: JSON.stringify({ email, password, full_name }),
+    });
+  }
   await setTokens(data.access, data.refresh);
   return data;
 }
@@ -160,10 +174,33 @@ export interface User {
   email: string;
   first_name: string;
   last_name: string;
+  /** Profile photo URL (absolute). */
+  avatar: string | null;
 }
 
 export async function getMe(): Promise<User> {
   return apiRequest<User>('/auth/me/');
+}
+
+export interface UpdateProfilePayload {
+  first_name?: string;
+  last_name?: string;
+  avatar?: File;
+}
+
+export async function updateProfile(payload: UpdateProfilePayload): Promise<User> {
+  const { avatar, ...rest } = payload;
+  if (avatar) {
+    const form = new FormData();
+    if (rest.first_name !== undefined) form.set('first_name', rest.first_name);
+    if (rest.last_name !== undefined) form.set('last_name', rest.last_name);
+    form.set('avatar', avatar);
+    return apiRequest<User>('/auth/me/', { method: 'PATCH', body: form });
+  }
+  return apiRequest<User>('/auth/me/', {
+    method: 'PATCH',
+    body: JSON.stringify(rest),
+  });
 }
 
 // Resumes
@@ -175,6 +212,7 @@ export interface Resume {
   version: number;
   parsed_content: Record<string, unknown>;
   raw_text: string;
+  is_primary?: boolean;
 }
 
 export async function getResumes(): Promise<Resume[]> {
@@ -211,6 +249,11 @@ export async function deleteResume(id: number): Promise<void> {
   await apiRequest(`/resumes/${id}/`, { method: 'DELETE' });
 }
 
+/** Set this resume as the current one (used for job matches and insights). */
+export async function setResumePrimary(id: number): Promise<Resume> {
+  return apiRequest<Resume>(`/resumes/${id}/set_primary/`, { method: 'POST' });
+}
+
 // Job matches
 export interface JobMatch {
   id: number;
@@ -227,11 +270,20 @@ export interface JobMatch {
   skills: string[];
   missing_skills: string[];
   created_at: string;
+  /** When the user marked this job as applied (ISO date string). */
+  applied_at: string | null;
 }
 
 export async function getJobMatches(): Promise<JobMatch[]> {
   const data = await apiRequest<JobMatch[]>('/job-matches/');
   return Array.isArray(data) ? data : [];
+}
+
+/** Mark a job match as applied or unmark. Applications = count of matches with applied_at set. */
+export async function markJobMatchApplied(id: number, applied: boolean): Promise<JobMatch> {
+  const url = `/job-matches/${id}/`;
+  const body = { applied_at: applied ? new Date().toISOString() : null };
+  return apiRequest<JobMatch>(url, { method: 'PATCH', body: JSON.stringify(body) });
 }
 
 export async function triggerJobScan(sync = true): Promise<{ task_id?: string; total_stored?: number }> {
@@ -261,6 +313,8 @@ export interface ResumeInsight {
   description: string;
   impact: 'high' | 'medium' | 'low';
   created_at: string;
+  /** When the user marked this suggestion as completed (applied manually). */
+  completed_at: string | null;
 }
 
 export async function getInsights(): Promise<ResumeInsight[]> {
@@ -271,6 +325,13 @@ export async function getInsights(): Promise<ResumeInsight[]> {
 export async function generateInsights(): Promise<ResumeInsight[]> {
   const data = await apiRequest<ResumeInsight[]>('/insights/generate/', { method: 'POST' });
   return Array.isArray(data) ? data : [];
+}
+
+/** Mark an insight as completed (after applying manually) or clear completed state. */
+export async function markInsightCompleted(id: number, completed: boolean): Promise<ResumeInsight> {
+  const url = `/insights/${id}/`;
+  const body = { completed_at: completed ? new Date().toISOString() : null };
+  return apiRequest<ResumeInsight>(url, { method: 'PATCH', body: JSON.stringify(body) });
 }
 
 // Job sites

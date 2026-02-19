@@ -1,12 +1,15 @@
 """Estimate interview probability from resume-job match analysis using OpenAI."""
+import hashlib
 import json
 import logging
 
+from django.core.cache import cache
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from .client import chat_completion_json
 
 logger = logging.getLogger(__name__)
+CACHE_TTL = 86400  # 24 hours
 
 SYSTEM_PROMPT = (
     "Based on resume-job match analysis, estimate the probability (0-100) "
@@ -54,6 +57,11 @@ def estimate_interview_probability(match_analysis: dict | str) -> dict | None:
         logger.warning("estimate_interview_probability called with empty/invalid input")
         return None
 
+    cache_key = "interview_prob:v1:" + hashlib.sha256(text.encode()).hexdigest()
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     try:
         content = _call_ai(text)
         data = json.loads(content)
@@ -70,6 +78,7 @@ def estimate_interview_probability(match_analysis: dict | str) -> dict | None:
             if isinstance(data.get("key_factors"), list)
             else [],
         }
+        cache.set(cache_key, result, CACHE_TTL)
         return result
 
     except Exception as e:

@@ -39,10 +39,21 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
+    avatar = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = User
-        fields = ("id", "email", "first_name", "last_name")
-        read_only_fields = fields
+        fields = ("id", "email", "first_name", "last_name", "avatar")
+        read_only_fields = ("id", "email")
+
+    def get_avatar(self, obj):
+        request = self.context.get("request")
+        if not request:
+            return None
+        profile = getattr(obj, "profile", None)
+        if not profile or not profile.avatar:
+            return None
+        return request.build_absolute_uri(profile.avatar.url)
 
 
 class LoginSerializer(serializers.Serializer):
@@ -66,6 +77,8 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 
 
 class ResumeSerializer(serializers.ModelSerializer):
+    is_primary = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = Resume
         fields = (
@@ -76,8 +89,18 @@ class ResumeSerializer(serializers.ModelSerializer):
             "version",
             "parsed_content",
             "raw_text",
+            "is_primary",
         )
-        read_only_fields = ("uploaded_at", "version", "parsed_content", "raw_text")
+        read_only_fields = ("uploaded_at", "version", "parsed_content", "raw_text", "is_primary")
+
+    def get_is_primary(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user:
+            return False
+        profile = getattr(request.user, "profile", None)
+        if not profile:
+            return False
+        return getattr(profile, "primary_resume_id", None) == obj.id
 
     def validate_file(self, value):
         from core.resume_utils import validate_resume_file
@@ -128,6 +151,7 @@ class JobSiteSerializer(serializers.ModelSerializer):
 class JobMatchSerializer(serializers.ModelSerializer):
     source = serializers.CharField(required=False, allow_blank=True)
     posted_date = serializers.DateField(required=False, allow_null=True)
+    applied_at = serializers.DateTimeField(required=False, allow_null=True)
 
     class Meta:
         model = JobMatch
@@ -147,6 +171,7 @@ class JobMatchSerializer(serializers.ModelSerializer):
             "skills",
             "missing_skills",
             "created_at",
+            "applied_at",
         )
         read_only_fields = ("created_at",)
 
@@ -162,10 +187,12 @@ class JobMatchSerializer(serializers.ModelSerializer):
 
 
 class ResumeInsightSerializer(serializers.ModelSerializer):
+    completed_at = serializers.DateTimeField(required=False, allow_null=True)
+
     class Meta:
         model = ResumeInsight
-        fields = ("id", "resume", "category", "title", "description", "impact", "created_at")
-        read_only_fields = fields
+        fields = ("id", "resume", "category", "title", "description", "impact", "created_at", "completed_at")
+        read_only_fields = ("id", "resume", "category", "title", "description", "impact", "created_at")
 
 
 # ----- AI endpoints -----

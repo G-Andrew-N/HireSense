@@ -13,6 +13,20 @@ class UserProfile(models.Model):
         on_delete=models.CASCADE,
         related_name="profile",
     )
+    avatar = models.ImageField(
+        upload_to="avatars/%Y/%m/",
+        null=True,
+        blank=True,
+        help_text="Profile photo.",
+    )
+    primary_resume = models.ForeignKey(
+        "Resume",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="primary_for_profiles",
+        help_text="Resume used for job matches and insights when set; otherwise latest by upload.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -195,6 +209,11 @@ class JobMatch(models.Model):
         help_text="List of skills in job description not found on resume.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    applied_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the user marked this job as applied (application completed).",
+    )
 
     class Meta:
         db_table = "core_job_match"
@@ -244,6 +263,11 @@ class ResumeInsight(models.Model):
         choices=Impact.choices,
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the user marked this suggestion as completed (applied manually).",
+    )
 
     class Meta:
         db_table = "core_resume_insight"

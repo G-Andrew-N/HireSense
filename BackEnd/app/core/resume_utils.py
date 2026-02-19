@@ -204,3 +204,49 @@ def validate_resume_file(file) -> tuple[bool, str]:
         return False, f"File too large. Max {MAX_FILE_SIZE_MB}MB."
 
     return True, ""
+
+
+def get_job_search_query(resume) -> str:
+    """
+    Derive a job search query (keywords) from the resume for fetching relevant jobs.
+
+    Uses parsed_content: most recent job title, then top skills, then summary snippet.
+    Falls back to first words of raw_text if no parsed_content.
+    Returns a short, sanitized query (max 4 words) so job boards are more likely to return results.
+    """
+    if not resume:
+        return "jobs"
+    parsed = getattr(resume, "parsed_content", None) or {}
+    if isinstance(parsed, str):
+        parsed = {}
+    raw_query = ""
+    # Prefer latest job title (most representative of target role)
+    exp = parsed.get("experience") or []
+    if isinstance(exp, list):
+        for entry in exp:
+            if isinstance(entry, dict):
+                title = (entry.get("title") or "").strip()
+                if title and len(title) < 80:
+                    raw_query = title
+                    break
+    if not raw_query:
+        skills = parsed.get("skills") or []
+        if isinstance(skills, list):
+            words = [s for s in skills if isinstance(s, str) and s.strip()][:3]
+            if words:
+                raw_query = " ".join(s.strip() for s in words)
+    if not raw_query:
+        summary = (parsed.get("summary") or "").strip()
+        if summary:
+            raw_query = summary.split(".", 1)[0].strip()[:60]
+    if not raw_query:
+        raw = (getattr(resume, "raw_text", None) or "").strip()
+        if raw:
+            words = [w for w in raw.split() if w.isalnum() and len(w) > 1][:5]
+            if words:
+                raw_query = " ".join(words)
+    if not raw_query:
+        return "jobs"
+    # Short query works better with Indeed RSS; keep first 4 words, alphanumeric + spaces only
+    words = [w for w in raw_query.replace("-", " ").split() if w.isalnum()][:4]
+    return " ".join(words) if words else "jobs"

@@ -1,12 +1,15 @@
 """Parse resume text into structured data using OpenAI."""
+import hashlib
 import json
 import logging
 
+from django.core.cache import cache
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from .client import chat_completion_json
 
 logger = logging.getLogger(__name__)
+CACHE_TTL = 86400  # 24 hours
 
 SYSTEM_PROMPT = (
     "You extract structured data from resumes. Return valid JSON only, no markdown or extra text. "
@@ -37,6 +40,7 @@ def _call_ai(resume_text: str) -> str:
 def parse_resume(resume_text: str) -> dict | None:
     """
     Parse resume text into structured data.
+    Results are cached for 24h to avoid redundant AI calls for identical resumes.
 
     Returns a dict with keys: skills, experience, education, summary.
     Returns None on failure.
@@ -44,6 +48,11 @@ def parse_resume(resume_text: str) -> dict | None:
     if not resume_text or not resume_text.strip():
         logger.warning("parse_resume called with empty text")
         return None
+
+    cache_key = "parse_resume:v1:" + hashlib.sha256(resume_text[:15000].encode()).hexdigest()
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
 
     try:
         content = _call_ai(resume_text)
@@ -56,6 +65,7 @@ def parse_resume(resume_text: str) -> dict | None:
             "education": data.get("education", []) if isinstance(data.get("education"), list) else [],
             "summary": data.get("summary", "") or "",
         }
+        cache.set(cache_key, result, CACHE_TTL)
         return result
 
     except Exception as e:

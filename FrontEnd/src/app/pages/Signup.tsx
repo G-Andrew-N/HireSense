@@ -6,7 +6,7 @@ import { useAuth } from "../../lib/auth-context";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
-import { Target, Mail, Lock, User, Eye, EyeOff, ArrowLeft } from "lucide-react";
+import { Target, Mail, Lock, User, Eye, EyeOff, ArrowLeft, Camera } from "lucide-react";
 import { motion } from "motion/react";
 
 export function Signup() {
@@ -20,6 +20,8 @@ export function Signup() {
     password: "",
     confirmPassword: "",
   });
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,7 +31,12 @@ export function Signup() {
     }
     setLoading(true);
     try {
-      const res = await register(formData.email, formData.password, formData.fullName);
+      const res = await register(
+        formData.email,
+        formData.password,
+        formData.fullName.trim() || undefined,
+        avatarFile ?? undefined
+      );
       setUser(res.user);
       navigate("/dashboard");
     } catch (err: unknown) {
@@ -47,6 +54,27 @@ export function Signup() {
       ...formData,
       [e.target.name]: e.target.value,
     });
+  };
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      setAvatarFile(null);
+      setAvatarPreview(null);
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please choose an image file (JPG, PNG, etc.)");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image must be under 5MB");
+      return;
+    }
+    setAvatarFile(file);
+    const reader = new FileReader();
+    reader.onload = () => setAvatarPreview(reader.result as string);
+    reader.readAsDataURL(file);
   };
 
   const passwordStrength = formData.password.length >= 8;
@@ -107,6 +135,29 @@ export function Signup() {
               onSubmit={handleSignup} 
               className="space-y-5"
             >
+              <div className="flex flex-col items-center gap-4">
+                <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">Profile photo (optional)</Label>
+                <label className="relative block cursor-pointer group">
+                  <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 flex items-center justify-center ring-2 ring-transparent group-hover:ring-emerald-400 transition-all">
+                    {avatarPreview ? (
+                      <img src={avatarPreview} alt="Preview" className="w-full h-full object-cover" />
+                    ) : (
+                      <Camera className="w-8 h-8 text-gray-400" />
+                    )}
+                  </div>
+                  <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity text-xs text-white font-medium text-center px-2">
+                    Add photo
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="sr-only"
+                    onChange={handleAvatarChange}
+                  />
+                </label>
+                <p className="text-xs text-gray-500 dark:text-gray-400">JPG or PNG, max 5MB</p>
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="fullName">Full name</Label>
                 <div className="relative">

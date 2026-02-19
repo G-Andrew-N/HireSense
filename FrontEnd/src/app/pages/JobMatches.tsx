@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { Header } from "../components/Header";
 import { Card, CardContent } from "../components/ui/card";
@@ -19,7 +20,7 @@ import {
 import { useScan } from "../../lib/scan-context";
 import {
   getJobMatches,
-  triggerJobScan,
+  markJobMatchApplied,
   triggerMatchAnalysisChunk,
   type JobMatch,
 } from "../../lib/api";
@@ -29,6 +30,7 @@ import { motion } from "motion/react";
 function toDisplay(j: JobMatch) {
   return {
     id: String(j.id),
+    rawId: j.id,
     title: j.title,
     company: j.company,
     location: j.location,
@@ -40,14 +42,18 @@ function toDisplay(j: JobMatch) {
     externalUrl: j.external_url,
     skills: j.skills ?? [],
     missingSkills: j.missing_skills ?? [],
+    appliedAt: j.applied_at ?? null,
   };
 }
 
 export function JobMatches() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const highlightId = searchParams.get("highlight");
   const { isScanning, setScanning } = useScan();
   const [matches, setMatches] = useState<JobMatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
+  const [markingId, setMarkingId] = useState<number | null>(null);
   const mountedRef = useRef(true);
 
   const load = useCallback(() => {
@@ -76,17 +82,45 @@ export function JobMatches() {
   const filteredJobs = matches
     .map(toDisplay)
     .filter((job) => {
-      if (filter === "high") return job.matchScore >= 85;
-      if (filter === "medium") return job.matchScore >= 70 && job.matchScore < 85;
-      if (filter === "low") return job.matchScore < 70;
+      const score = Number(job.matchScore);
+      if (Number.isNaN(score)) return true;
+      if (filter === "high") return score >= 85;
+      if (filter === "medium") return score >= 70 && score < 85;
+      if (filter === "low") return score < 70;
       return true;
     });
 
+  // When navigated from Dashboard with ?highlight=id, ensure the match is visible (clear filter if needed) then scroll to it
+  useEffect(() => {
+    if (!highlightId || loading || matches.length === 0) return;
+    const matchExists = matches.some((m) => String(m.id) === highlightId);
+    if (!matchExists) return;
+    const inFiltered = filteredJobs.some((j) => j.id === highlightId);
+    if (!inFiltered) setFilter("all");
+  }, [highlightId, loading, matches.length, filteredJobs]);
+
+  const highlightVisible = highlightId && filteredJobs.some((j) => j.id === highlightId);
+  useEffect(() => {
+    if (!highlightId || loading || !highlightVisible) return;
+    const el = document.getElementById(`match-${highlightId}`);
+    if (el) {
+      const t = setTimeout(() => {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        setSearchParams((prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete("highlight");
+          return next;
+        }, { replace: true });
+      }, 300);
+      return () => clearTimeout(t);
+    }
+  }, [highlightId, loading, highlightVisible, setSearchParams]);
+
   const handleScan = async () => {
     setScanning(true);
-    toast.info("Job scan started. Jobs will appear as they’re found.");
+    setMatches([]); // Only show this run's opportunities; clear previous list
+    toast.info("Reviewing your resume and finding jobs for your profession…");
     try {
-      await triggerJobScan(true);
       let totalCreated = 0;
       let hasMore = true;
       while (hasMore && mountedRef.current) {
@@ -97,7 +131,11 @@ export function JobMatches() {
         }
         hasMore = has_more;
       }
-      toast.success(totalCreated > 0 ? `Found ${totalCreated} new job matches!` : "Scan complete.");
+      if (totalCreated > 0) {
+        toast.success(`Found ${totalCreated} job match${totalCreated === 1 ? "" : "es"}!`);
+      } else {
+        toast.info("No jobs found for your profession right now. Try again later.");
+      }
     } catch (err: unknown) {
       const msg = (err as { body?: { detail?: string } })?.body?.detail ?? "Scan failed";
       toast.error(msg);
@@ -116,6 +154,37 @@ export function JobMatches() {
     if (prob >= 75) return "text-green-600";
     if (prob >= 60) return "text-emerald-600";
     return "text-orange-600";
+  };
+
+  const handleMarkApplied = async (jobId: number, applied: boolean) => {
+    setMarkingId(jobId);
+    const prev = matches.find((m) => m.id === jobId);
+    const prevAppliedAt = prev?.applied_at ?? null;
+    if (applied) {
+      setMatches((m) =>
+        m.map((match) =>
+          match.id === jobId ? { ...match, applied_at: new Date().toISOString() } : match
+        )
+      );
+    } else {
+      setMatches((m) =>
+        m.map((match) => (match.id === jobId ? { ...match, applied_at: null } : match))
+      );
+    }
+    try {
+      await markJobMatchApplied(jobId, applied);
+    } catch {
+      if (mountedRef.current) {
+        setMatches((m) =>
+          m.map((match) =>
+            match.id === jobId ? { ...match, applied_at: prevAppliedAt } : match
+          )
+        );
+        toast.error("Failed to update applied status.");
+      }
+    } finally {
+      if (mountedRef.current) setMarkingId(null);
+    }
   };
 
   return (
@@ -168,6 +237,7 @@ export function JobMatches() {
             {filteredJobs.map((job, index) => (
               <motion.div
                 key={job.id}
+                id={`match-${job.id}`}
                 initial={{ opacity: 0, y: 30 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: "-50px" }}
@@ -268,6 +338,31 @@ export function JobMatches() {
                               </a>
                             </Button>
                           )}
+                          {job.appliedAt ? (
+                            <>
+                              <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 border-blue-200 dark:border-blue-800 w-fit">
+                                <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                                Applied
+                              </Badge>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={markingId === job.rawId}
+                                onClick={() => handleMarkApplied(job.rawId, false)}
+                              >
+                                {markingId === job.rawId ? "Updating…" : "Undo"}
+                              </Button>
+                            </>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={markingId === job.rawId}
+                              onClick={() => handleMarkApplied(job.rawId, true)}
+                            >
+                              {markingId === job.rawId ? "Updating…" : "Mark as applied"}
+                            </Button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -286,14 +381,28 @@ export function JobMatches() {
           >
             <Card className="p-12 text-center">
               <Briefcase className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">No matches found</h3>
-              <p className="text-gray-600 dark:text-gray-400 mb-4">
-                Upload your resume and run a job scan to get matches.
-              </p>
-              <Button onClick={handleScan} disabled={isScanning}>
-                {isScanning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <TrendingUp className="w-4 h-4 mr-2" />}
-                Scan for Jobs
-              </Button>
+              {matches.length > 0 ? (
+                <>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">No matches in this category</h3>
+                  <p className="text-gray-600 dark:text-gray-400 mb-4">
+                    Try selecting &quot;All Matches&quot; or a different filter above.
+                  </p>
+                  <Button variant="outline" onClick={() => setFilter("all")}>
+                    Show all matches
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">No jobs to show</h3>
+                  <p className="text-gray-600 dark:text-gray-400 mb-4">
+                    Upload your resume and click Find jobs to see opportunities that match your profession. If you just ran a search and see this, no matching jobs were found right now.
+                  </p>
+                  <Button onClick={handleScan} disabled={isScanning}>
+                    {isScanning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <TrendingUp className="w-4 h-4 mr-2" />}
+                    Find jobs
+                  </Button>
+                </>
+              )}
             </Card>
           </motion.div>
         )}

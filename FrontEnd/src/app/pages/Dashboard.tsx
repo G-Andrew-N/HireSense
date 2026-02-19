@@ -20,6 +20,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { motion } from "motion/react";
 import { getJobMatches, type JobMatch } from "../../lib/api";
 
+/** Chart data: applications = job matches the user has marked as applied, by date applied. */
 function buildChartDataFromMatches(matches: JobMatch[]): { name: string; applications: number }[] {
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const today = new Date();
@@ -28,10 +29,7 @@ function buildChartDataFromMatches(matches: JobMatch[]): { name: string; applica
     const d = new Date(today);
     d.setDate(d.getDate() - i);
     const dateStr = d.toISOString().slice(0, 10);
-    const count = matches.filter((m) => {
-      const created = m.created_at?.slice(0, 10);
-      return created === dateStr;
-    }).length;
+    const count = matches.filter((m) => m.applied_at && m.applied_at.slice(0, 10) === dateStr).length;
     const label = `${dayNames[d.getDay()]} ${d.getDate()}`;
     result.push({ name: label, applications: count });
   }
@@ -68,6 +66,7 @@ function toDisplayMatch(j: JobMatch) {
     source: j.source,
     skills: j.skills ?? [],
     missingSkills: j.missing_skills ?? [],
+    appliedAt: j.applied_at ?? null,
   };
 }
 
@@ -84,6 +83,7 @@ export function Dashboard() {
 
   const topMatches = matches.slice(0, 3).map(toDisplayMatch);
   const totalMatches = matches.length;
+  const applicationsCount = matches.filter((m) => m.applied_at != null).length;
   const avgScore = totalMatches > 0
     ? Math.round(matches.reduce((s, m) => s + m.match_score, 0) / totalMatches)
     : 0;
@@ -202,9 +202,9 @@ export function Dashboard() {
             <Card className="hover:shadow-lg transition-shadow duration-300">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                  Resume Score
+                  Applications
                 </CardTitle>
-                <FileText className="w-4 h-4 text-orange-600" />
+                <CheckCircle2 className="w-4 h-4 text-blue-600" />
               </CardHeader>
               <CardContent>
                 <motion.div
@@ -213,14 +213,11 @@ export function Dashboard() {
                   transition={{ delay: 0.6, type: "spring", stiffness: 200 }}
                   className="text-3xl font-bold text-gray-900 dark:text-gray-100"
                 >
-                  {avgScore || "—"}%
+                  {loading ? "—" : applicationsCount}
                 </motion.div>
-                <Link
-                  to="/dashboard/insights"
-                  className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline mt-1 inline-block"
-                >
-                  View improvements →
-                </Link>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Jobs marked as applied
+                </p>
               </CardContent>
             </Card>
           </motion.div>
@@ -308,14 +305,14 @@ export function Dashboard() {
                 </div>
               ) : (
                 topMatches.map((job, index) => (
-                  <motion.div
-                    key={job.id}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.8 + index * 0.1, duration: 0.5 }}
-                    whileHover={{ scale: 1.02, transition: { duration: 0.2 } }}
-                    className="flex items-start gap-4 p-4 border border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700 hover:bg-blue-50/50 dark:hover:bg-blue-950/50 transition-all cursor-pointer"
-                  >
+                  <Link key={job.id} to={`/dashboard/matches?highlight=${job.id}`}>
+                    <motion.div
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.8 + index * 0.1, duration: 0.5 }}
+                      whileHover={{ scale: 1.02, transition: { duration: 0.2 } }}
+                      className="flex items-start gap-4 p-4 border border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700 hover:bg-blue-50/50 dark:hover:bg-blue-950/50 transition-all cursor-pointer"
+                    >
                     <div className="w-12 h-12 bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-900 dark:to-teal-900 flex items-center justify-center flex-shrink-0">
                       <Briefcase className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
                     </div>
@@ -327,9 +324,16 @@ export function Dashboard() {
                             {job.company} • {job.location}
                           </p>
                         </div>
-                        <Badge className="bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900 w-fit">
-                          {job.matchScore}% Match
-                        </Badge>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge className="bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900 w-fit">
+                            {job.matchScore}% Match
+                          </Badge>
+                          {job.appliedAt && (
+                            <Badge className="bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 w-fit">
+                              Applied
+                            </Badge>
+                          )}
+                        </div>
                       </div>
                       <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mt-2">
                         <div className="flex items-center gap-2">
@@ -347,6 +351,7 @@ export function Dashboard() {
                       </div>
                     </div>
                   </motion.div>
+                  </Link>
                 ))
               )}
             </CardContent>

@@ -15,14 +15,14 @@ import {
   Check,
   Loader2,
 } from "lucide-react";
-import { getInsights, generateInsights, type ResumeInsight } from "../../lib/api";
+import { getInsights, generateInsights, markInsightCompleted, type ResumeInsight } from "../../lib/api";
 import { motion, AnimatePresence } from "motion/react";
 
 export function Insights() {
   const [insights, setInsights] = useState<ResumeInsight[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
-  const [ignoredIds, setIgnoredIds] = useState<number[]>([]);
+  const [updatingId, setUpdatingId] = useState<number | null>(null);
 
   const loadInsights = () => {
     setLoading(true);
@@ -41,7 +41,6 @@ export function Insights() {
     generateInsights()
       .then((data) => {
         setInsights(data);
-        setIgnoredIds([]);
         if (data.length > 0) toast.success(`Generated ${data.length} insights`);
         else toast.info("No insights generated. Ensure your resume is uploaded and OPENAI_API_KEY is set.");
       })
@@ -52,18 +51,37 @@ export function Insights() {
       .finally(() => setGenerating(false));
   };
 
-  const visible = insights.filter((i) => !ignoredIds.includes(i.id));
-  const allInsights = [...visible].sort((a, b) => {
+  const handleMarkCompleted = async (id: number, completed: boolean) => {
+    setUpdatingId(id);
+    const prev = insights.find((i) => i.id === id);
+    const prevCompleted = prev?.completed_at ?? null;
+    setInsights((prevList) =>
+      prevList.map((i) =>
+        i.id === id ? { ...i, completed_at: completed ? new Date().toISOString() : null } : i
+      )
+    );
+    try {
+      const updated = await markInsightCompleted(id, completed);
+      setInsights((prevList) => prevList.map((i) => (i.id === id ? updated : i)));
+    } catch {
+      setInsights((prevList) =>
+        prevList.map((i) => (i.id === id ? { ...i, completed_at: prevCompleted } : i))
+      );
+      toast.error("Failed to update");
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const allInsights = [...insights].sort((a, b) => {
     const o: Record<string, number> = { critical: 0, important: 1, suggestion: 2 };
     return (o[a.category] ?? 2) - (o[b.category] ?? 2);
   });
 
-  const criticalCount = visible.filter((i) => i.category === "critical").length;
-  const importantCount = visible.filter((i) => i.category === "important").length;
-  const suggestionCount = visible.filter((i) => i.category === "suggestion").length;
-
-  const handleIgnore = (id: number) => setIgnoredIds((p) => [...p, id]);
-  const handleApply = (id: number) => setIgnoredIds((p) => [...p, id]);
+  const incomplete = insights.filter((i) => !i.completed_at);
+  const criticalCount = incomplete.filter((i) => i.category === "critical").length;
+  const importantCount = incomplete.filter((i) => i.category === "important").length;
+  const suggestionCount = incomplete.filter((i) => i.category === "suggestion").length;
 
   const getPriorityBadge = (category: string) => {
     if (category === "critical") return <Badge className="bg-red-600 text-white border-0">Critical</Badge>;
@@ -99,12 +117,12 @@ export function Insights() {
                     <h3 className="text-lg sm:text-xl font-semibold">Potential Impact</h3>
                   </div>
                   <p className="text-emerald-100 text-sm mb-4">
-                    By implementing these recommendations, you could significantly improve your job application success rate.
+                    Apply each suggestion manually (e.g. update your resume), then mark it as completed in the list below.
                   </p>
                   <div className="grid grid-cols-2 gap-4 sm:gap-6">
                     <div>
-                      <div className="text-2xl sm:text-3xl font-bold">{allInsights.length}</div>
-                      <div className="text-xs sm:text-sm text-emerald-100">Recommendations</div>
+                      <div className="text-2xl sm:text-3xl font-bold">{incomplete.length}</div>
+                      <div className="text-xs sm:text-sm text-emerald-100">Remaining</div>
                     </div>
                     <div>
                       <div className="text-2xl sm:text-3xl font-bold">{criticalCount + importantCount}</div>
@@ -217,7 +235,11 @@ export function Insights() {
                       <motion.div
                         key={insight.id}
                         layout
-                        className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4 p-4 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
+                        className={`flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4 p-4 border ${
+                          insight.completed_at
+                            ? "bg-emerald-50/50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800"
+                            : "bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700"
+                        }`}
                         initial={{ opacity: 0, y: 30 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, x: -100 }}
@@ -229,8 +251,21 @@ export function Insights() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-2">
-                              <h4 className="font-semibold text-gray-900 dark:text-gray-100">{insight.title}</h4>
-                              {getPriorityBadge(insight.category)}
+                              <h4
+                                className={`font-semibold ${
+                                  insight.completed_at
+                                    ? "text-gray-500 dark:text-gray-400 line-through"
+                                    : "text-gray-900 dark:text-gray-100"
+                                }`}
+                              >
+                                {insight.title}
+                              </h4>
+                              <div className="flex flex-wrap items-center gap-2">
+                                {getPriorityBadge(insight.category)}
+                                {insight.completed_at && (
+                                  <Badge className="bg-emerald-600 text-white border-0">Completed</Badge>
+                                )}
+                              </div>
                             </div>
                             <p className="text-sm text-gray-600 dark:text-gray-400">{insight.description}</p>
                             <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-2">
@@ -238,14 +273,39 @@ export function Insights() {
                                 {insight.impact}
                               </Badge>
                               <div className="flex gap-2 sm:ml-auto">
-                                <Button size="sm" variant="outline" onClick={() => handleIgnore(insight.id)}>
-                                  <X className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
-                                  Ignore
-                                </Button>
-                                <Button size="sm" className="bg-gradient-to-r from-emerald-600 to-teal-600" onClick={() => handleApply(insight.id)}>
-                                  <Check className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
-                                  Apply
-                                </Button>
+                                {insight.completed_at ? (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleMarkCompleted(insight.id, false)}
+                                    disabled={updatingId === insight.id}
+                                  >
+                                    {updatingId === insight.id ? (
+                                      <Loader2 className="w-3 h-3 sm:w-4 sm:h-4 animate-spin" />
+                                    ) : (
+                                      <>
+                                        <X className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
+                                        Clear
+                                      </>
+                                    )}
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    className="bg-gradient-to-r from-emerald-600 to-teal-600"
+                                    onClick={() => handleMarkCompleted(insight.id, true)}
+                                    disabled={updatingId === insight.id}
+                                  >
+                                    {updatingId === insight.id ? (
+                                      <Loader2 className="w-3 h-3 sm:w-4 sm:h-4 animate-spin" />
+                                    ) : (
+                                      <>
+                                        <Check className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
+                                        Mark as completed
+                                      </>
+                                    )}
+                                  </Button>
+                                )}
                               </div>
                             </div>
                           </div>

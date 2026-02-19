@@ -20,8 +20,18 @@ class RSSJobFetcher(BaseJobFetcher):
                 request_headers={"User-Agent": "HireSense/1.0 (Job Aggregator)"},
             )
         except Exception as e:
-            logger.exception("RSS fetch failed for %s: %s", self.url, e)
-            return JobFetcherResult(jobs=[], error=str(e))
+            err_str = str(e)
+            # Indeed and some sites return HTML instead of RSS, causing XML parse errors; no traceback needed
+            is_parse_error = (
+                "SAXParseException" in type(e).__name__
+                or "ExpatError" in type(e).__name__
+                or "SAXParseException" in err_str
+            )
+            if is_parse_error:
+                logger.debug("RSS parse failed (likely non-RSS response) for %s: %s", self.url, err_str)
+            else:
+                logger.exception("RSS fetch failed for %s: %s", self.url, e)
+            return JobFetcherResult(jobs=[], error=err_str)
 
         if feed.bozo and not feed.entries:
             return JobFetcherResult(

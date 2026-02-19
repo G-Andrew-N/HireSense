@@ -91,19 +91,43 @@ def _chat_gemini(system: str, user: str, temperature: float) -> str:
 
 
 def _chat_groq(system: str, user: str, temperature: float) -> str:
-    from groq import Groq
+    import time
+
+    from groq import APIConnectionError, Groq, RateLimitError
 
     api_key = getattr(settings, "GROQ_API_KEY", None)
     if not api_key:
         raise ValueError("GROQ_API_KEY must be set when AI_PROVIDER=groq")
     client = Groq(api_key=api_key)
-    response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        response_format={"type": "json_object"},
-        temperature=temperature,
-    )
-    return response.choices[0].message.content or ""
+
+    last_err = None
+    for attempt in range(3):
+        try:
+            response = client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                response_format={"type": "json_object"},
+                temperature=temperature,
+            )
+            return response.choices[0].message.content or ""
+        except RateLimitError as e:
+            last_err = e
+            wait = 25  # Groq free tier resets TPM/RPM ~every 20-30s
+            if attempt < 2:
+                logger.warning("Groq rate limit (TPM/RPM), waiting %ds before retry: %s", wait, e)
+                time.sleep(wait)
+            else:
+                raise
+        except APIConnectionError as e:
+            # DNS/network transient failure (e.g. "Temporary failure in name resolution")
+            last_err = e
+            wait = 5 * (attempt + 1)  # 5s, 10s
+            if attempt < 2:
+                logger.warning("Groq connection error, retry in %ds: %s", wait, e)
+                time.sleep(wait)
+            else:
+                raise
+    raise last_err

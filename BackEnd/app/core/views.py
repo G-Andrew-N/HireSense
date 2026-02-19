@@ -18,13 +18,14 @@ from rest_framework.response import Response
 from django.http import FileResponse
 from rest_framework.decorators import action
 from rest_framework.views import APIView
+from rest_framework.mixins import UpdateModelMixin
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import JobMatch, JobSite, Resume, ResumeInsight
+from .models import JobMatch, JobSite, Resume, ResumeInsight, UserProfile
 from .resume_pipeline import process_resume_text, run_pipeline_and_save
 from .resume_utils import extract_text_from_file, validate_resume_file
-from .throttles import AIEndpointThrottle, AuthRateThrottle
+from .throttles import AIEndpointThrottle, AIInsightsThrottle, AIMatchThrottle, AuthRateThrottle, ScanThrottle
 from .serializers import (
     JobMatchAnalysisSerializer,
     JobMatchSerializer,
@@ -53,13 +54,22 @@ def _get_tokens_for_user(user):
 class RegisterView(APIView):
     permission_classes = [AllowAny]
     throttle_classes = [AuthRateThrottle]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
 
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        profile, _ = UserProfile.objects.get_or_create(user=user, defaults={})
+        avatar_file = request.FILES.get("avatar")
+        if avatar_file:
+            profile.avatar = avatar_file
+            profile.save(update_fields=["avatar"])
         return Response(
-            {"user": UserSerializer(user).data, **_get_tokens_for_user(user)},
+            {
+                "user": UserSerializer(user, context={"request": request}).data,
+                **_get_tokens_for_user(user),
+            },
             status=status.HTTP_201_CREATED,
         )
 
@@ -84,7 +94,10 @@ class LoginView(APIView):
                 {"detail": "User account is disabled."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        return Response({"user": UserSerializer(user).data, **_get_tokens_for_user(user)})
+        return Response({
+            "user": UserSerializer(user, context={"request": request}).data,
+            **_get_tokens_for_user(user),
+        })
 
 
 class LogoutView(APIView):
@@ -110,9 +123,31 @@ class LogoutView(APIView):
 
 class MeView(APIView):
     permission_classes = [IsAuthenticated]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
 
     def get(self, request):
-        return Response(UserSerializer(request.user).data)
+        return Response(UserSerializer(request.user, context={"request": request}).data)
+
+    def patch(self, request):
+        user = request.user
+        profile, _ = UserProfile.objects.get_or_create(user=user, defaults={})
+        if request.content_type and "multipart/form-data" in request.content_type:
+            if "first_name" in request.data:
+                user.first_name = request.data.get("first_name", user.first_name) or ""
+            if "last_name" in request.data:
+                user.last_name = request.data.get("last_name", user.last_name) or ""
+            avatar_file = request.FILES.get("avatar")
+            if avatar_file:
+                profile.avatar = avatar_file
+                profile.save(update_fields=["avatar"])
+        else:
+            data = request.data
+            if "first_name" in data:
+                user.first_name = data.get("first_name", user.first_name) or ""
+            if "last_name" in data:
+                user.last_name = data.get("last_name", user.last_name) or ""
+        user.save(update_fields=["first_name", "last_name"])
+        return Response(UserSerializer(user, context={"request": request}).data)
 
 
 class PasswordResetRequestView(APIView):
@@ -301,6 +336,7 @@ class JobScanView(APIView):
     """POST /api/jobs/scan/ - Trigger job site scan. Use ?sync=true to run synchronously (no Celery)."""
 
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScanThrottle]
 
     def post(self, request):
         from .tasks import scan_all_job_sites, _run_scan_all
@@ -319,6 +355,7 @@ class JobScanSiteView(APIView):
     """POST /api/jobs/scan/<site_id>/ - Trigger scan for a single site."""
 
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScanThrottle]
 
     def post(self, request, site_id: int):
         from .tasks import scan_job_site
@@ -338,6 +375,7 @@ class JobMatchAnalysisTriggerView(APIView):
     """
 
     permission_classes = [IsAuthenticated]
+    throttle_classes = [AIMatchThrottle]
 
     def post(self, request):
         from .tasks import run_match_analysis_for_user, _run_match_analysis_for_user, _run_match_analysis_chunk
@@ -406,15 +444,39 @@ class ResumeViewSet(ModelViewSet):
         except Exception as e:
             RESUME_LOG.exception("Resume save failed: %s", e, exc_info=True)
             raise UploadFailedError from e
+        profile, _ = UserProfile.objects.get_or_create(user=instance.user, defaults={})
+        profile.primary_resume = instance
+        profile.save(update_fields=["primary_resume"])
         try:
             _parse_and_save_resume(instance)
         except Exception as e:
             RESUME_LOG.exception("Resume parsing failed after upload: %s", e, exc_info=True)
+            return
+        # Regenerate job listings to reflect the new resume (insights already regenerated in pipeline)
+        try:
+            from .tasks import run_match_analysis_for_user
+
+            run_match_analysis_for_user.delay(instance.user_id)
+        except Exception as e:
+            # Celery/Redis may be unavailable (e.g. dev without Redis); upload still succeeds
+            RESUME_LOG.warning("Could not enqueue job scan after resume upload: %s", e)
 
     def perform_destroy(self, instance):
         if instance.file:
             instance.file.delete(save=False)
         instance.delete()
+
+    @action(detail=True, methods=["post"])
+    def set_primary(self, request, pk=None):
+        """Set this resume as the current one (used for job matches and insights)."""
+        resume = self.get_object()
+        profile, _ = UserProfile.objects.get_or_create(user=request.user, defaults={})
+        profile.primary_resume = resume
+        profile.save(update_fields=["primary_resume"])
+        return Response(
+            ResumeSerializer(resume, context={"request": request}).data,
+            status=status.HTTP_200_OK,
+        )
 
     @action(detail=True, methods=["get"])
     def download(self, request, pk=None):
@@ -468,15 +530,29 @@ class JobMatchViewSet(ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return JobMatch.objects.filter(user=self.request.user).order_by("-match_score", "-created_at")
+        from .tasks import ACCEPTED_RESUME_SOURCES
+        # Only show matches from profession-based fetches (Indeed or WWR fallback for devs)
+        return (
+            JobMatch.objects.filter(user=self.request.user, source__in=ACCEPTED_RESUME_SOURCES)
+            .order_by("-match_score", "-created_at")
+        )
 
 
-# ----- Resume insight (read-only) -----
+# ----- Resume insight (read-only + PATCH completed_at) -----
 
 
-class ResumeInsightViewSet(ReadOnlyModelViewSet):
+class ResumeInsightViewSet(UpdateModelMixin, ReadOnlyModelViewSet):
     serializer_class = ResumeInsightSerializer
     permission_classes = [IsAuthenticated]
+
+    def perform_update(self, serializer):
+        """Only allow updating completed_at (user marks suggestion as done/clear)."""
+        serializer.save(completed_at=serializer.validated_data.get("completed_at"))
+
+    def get_throttles(self):
+        if self.action == "generate":
+            return [AIInsightsThrottle()]
+        return super().get_throttles()
 
     def get_queryset(self):
         return ResumeInsight.objects.filter(user=self.request.user).order_by("category", "-created_at")
@@ -502,7 +578,9 @@ class ResumeInsightViewSet(ReadOnlyModelViewSet):
                 {"detail": "OPENAI_API_KEY is not set. Add it to your .env file."},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
-        resume = Resume.objects.filter(user=request.user).order_by("-uploaded_at").first()
+        from .tasks import _get_current_resume
+
+        resume = _get_current_resume(request.user)
         if not resume:
             return Response(
                 {"detail": "Upload a resume first to generate insights."},

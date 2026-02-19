@@ -11,13 +11,16 @@ import {
   AlertCircle,
   Download,
   Loader2,
+  Trash2,
 } from "lucide-react";
-import { getResumes, uploadResume, downloadResume, type Resume } from "../../lib/api";
+import { getResumes, uploadResume, downloadResume, deleteResume, setResumePrimary, type Resume } from "../../lib/api";
 
 export function Resume() {
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [settingPrimaryId, setSettingPrimaryId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = () => {
@@ -32,8 +35,11 @@ export function Resume() {
     load();
   }, []);
 
-  const latest = resumes[0];
-  const hasResume = !!latest;
+  const current = resumes.find((r) => r.is_primary) ?? resumes[0];
+  const hasResume = resumes.length > 0;
+
+  const resumeDisplayName = (r: Resume) =>
+    r.original_filename || r.file?.split("/").pop() || "Resume";
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -64,11 +70,38 @@ export function Resume() {
     }
   };
 
-  const resumeMetrics = latest?.parsed_content
+  const handleRemove = async (r: Resume, label: string) => {
+    if (!window.confirm(`Remove ${label}? You can upload a new file anytime.`)) return;
+    setDeletingId(r.id);
+    try {
+      await deleteResume(r.id);
+      toast.success("Resume removed");
+      load();
+    } catch {
+      toast.error("Failed to remove resume");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleSetPrimary = async (r: Resume) => {
+    setSettingPrimaryId(r.id);
+    try {
+      await setResumePrimary(r.id);
+      toast.success(`"${resumeDisplayName(r)}" is now used for job matches and insights`);
+      load();
+    } catch {
+      toast.error("Failed to set as current");
+    } finally {
+      setSettingPrimaryId(null);
+    }
+  };
+
+  const resumeMetrics = current?.parsed_content
     ? [
-        { label: "Skills", value: (latest.parsed_content.skills as string[])?.length ? 90 : 50, status: "good" as const },
-        { label: "Experience", value: (latest.parsed_content.experience as unknown[])?.length ? 85 : 60, status: "warning" as const },
-        { label: "Education", value: (latest.parsed_content.education as unknown[])?.length ? 80 : 50, status: "good" as const },
+        { label: "Skills", value: (current.parsed_content.skills as string[])?.length ? 90 : 50, status: "good" as const },
+        { label: "Experience", value: (current.parsed_content.experience as unknown[])?.length ? 85 : 60, status: "warning" as const },
+        { label: "Education", value: (current.parsed_content.education as unknown[])?.length ? 80 : 50, status: "good" as const },
       ]
     : [
         { label: "ATS Compatibility", value: 92, status: "good" as const },
@@ -104,38 +137,13 @@ export function Resume() {
                 </div>
               ) : hasResume ? (
                 <div className="space-y-4">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 p-4 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800">
-                    <div className="w-12 h-12 bg-green-100 dark:bg-green-900 flex items-center justify-center flex-shrink-0">
-                      <FileText className="w-6 h-6 text-green-600 dark:text-green-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-gray-900 dark:text-gray-100 truncate">
-                        {latest.original_filename || latest.file?.split("/").pop() || "Resume"}
-                      </h3>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
-                        Uploaded {new Date(latest.uploaded_at).toLocaleDateString()} • v{latest.version}
-                      </p>
-                    </div>
-                    <div className="flex gap-2 w-full sm:w-auto">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1 sm:flex-initial"
-                        onClick={() => handleDownload(latest)}
-                      >
-                        <Download className="w-4 h-4 sm:mr-2" />
-                        <span className="hidden sm:inline">Download</span>
-                      </Button>
-                    </div>
-                  </div>
-
                   <div
                     className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center hover:border-purple-400 dark:hover:border-purple-500 transition-colors cursor-pointer"
                     onClick={() => fileInputRef.current?.click()}
                   >
                     <Upload className="w-8 h-8 text-gray-400 mx-auto mb-3" />
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Upload a new version</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-500">PDF, DOC, DOCX up to 10MB</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Replace or add a new version</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-500">PDF, DOC, DOCX up to 10MB.</p>
                     <Button
                       className="mt-4"
                       variant="outline"
@@ -148,6 +156,48 @@ export function Resume() {
                       {uploading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                       Choose File
                     </Button>
+                  </div>
+
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Current resume</h3>
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 p-4 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg">
+                      <div className="w-12 h-12 bg-green-100 dark:bg-green-900 flex items-center justify-center flex-shrink-0 rounded">
+                        <FileText className="w-6 h-6 text-green-600 dark:text-green-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-semibold text-gray-900 dark:text-gray-100 truncate">
+                          {resumeDisplayName(current)}
+                        </h4>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          Uploaded {new Date(current.uploaded_at).toLocaleDateString()} · Version {current.version} · used for job matches and insights
+                        </p>
+                      </div>
+                      <div className="flex gap-2 w-full sm:w-auto">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 sm:flex-initial"
+                          onClick={() => handleDownload(current)}
+                        >
+                          <Download className="w-4 h-4 sm:mr-2" />
+                          <span className="hidden sm:inline">Download</span>
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 sm:flex-initial text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/50"
+                          onClick={() => handleRemove(current, resumeDisplayName(current))}
+                          disabled={deletingId === current.id}
+                        >
+                          {deletingId === current.id ? (
+                            <Loader2 className="w-4 h-4 sm:mr-2 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-4 h-4 sm:mr-2" />
+                          )}
+                          <span className="hidden sm:inline">Remove</span>
+                        </Button>
+                      </div>
+                    </div>
                   </div>
 
                   {uploading && (
@@ -178,25 +228,99 @@ export function Resume() {
               )}
 
               {hasResume && (
-                <div className="space-y-4 pt-4 border-t">
-                  <h3 className="font-semibold text-gray-900 dark:text-gray-100">Resume Analysis</h3>
-                  {resumeMetrics.map((metric) => (
-                    <div key={metric.label} className="space-y-2">
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600 dark:text-gray-400">{metric.label}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold">{metric.value}%</span>
-                          {metric.status === "good" ? (
-                            <CheckCircle2 className="w-4 h-4 text-green-600" />
-                          ) : (
-                            <AlertCircle className="w-4 h-4 text-orange-600" />
-                          )}
+                <>
+                  <div className="space-y-4 pt-4 border-t">
+                    <h3 className="font-semibold text-gray-900 dark:text-gray-100">Resume Analysis</h3>
+                    {resumeMetrics.map((metric) => (
+                      <div key={metric.label} className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-gray-600 dark:text-gray-400">{metric.label}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold">{metric.value}%</span>
+                            {metric.status === "good" ? (
+                              <CheckCircle2 className="w-4 h-4 text-green-600" />
+                            ) : (
+                              <AlertCircle className="w-4 h-4 text-orange-600" />
+                            )}
+                          </div>
                         </div>
+                        <Progress value={metric.value} className={metric.status === "good" ? "" : "bg-orange-100"} />
                       </div>
-                      <Progress value={metric.value} className={metric.status === "good" ? "" : "bg-orange-100"} />
+                    ))}
+                  </div>
+                  <div className="space-y-4 pt-4 border-t">
+                    <h3 className="font-semibold text-gray-900 dark:text-gray-100">
+                      Your resumes ({resumes.length})
+                    </h3>
+                    <div className="space-y-3">
+                      {resumes.map((r) => (
+                        <div
+                          key={r.id}
+                          className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 p-4 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg"
+                        >
+                          <div className="w-12 h-12 bg-green-100 dark:bg-green-900 flex items-center justify-center flex-shrink-0 rounded">
+                            <FileText className="w-6 h-6 text-green-600 dark:text-green-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="font-semibold text-gray-900 dark:text-gray-100 truncate">
+                                {resumeDisplayName(r)}
+                              </h3>
+                              {r.is_primary && (
+                                <span className="text-xs font-medium text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900 px-2 py-0.5 rounded">
+                                  Current
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">
+                              Uploaded {new Date(r.uploaded_at).toLocaleDateString()} · Version {r.version}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                            {resumes.length > 1 && !r.is_primary && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex-1 sm:flex-initial border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-950/50"
+                                onClick={() => handleSetPrimary(r)}
+                                disabled={settingPrimaryId === r.id}
+                              >
+                                {settingPrimaryId === r.id ? (
+                                  <Loader2 className="w-4 h-4 sm:mr-2 animate-spin" />
+                                ) : null}
+                                <span className="hidden sm:inline">Set as current</span>
+                                <span className="sm:hidden">Current</span>
+                              </Button>
+                            )}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex-1 sm:flex-initial"
+                              onClick={() => handleDownload(r)}
+                            >
+                              <Download className="w-4 h-4 sm:mr-2" />
+                              <span className="hidden sm:inline">Download</span>
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex-1 sm:flex-initial text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/50"
+                              onClick={() => handleRemove(r, resumeDisplayName(r))}
+                              disabled={deletingId === r.id}
+                            >
+                              {deletingId === r.id ? (
+                                <Loader2 className="w-4 h-4 sm:mr-2 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-4 h-4 sm:mr-2" />
+                              )}
+                              <span className="hidden sm:inline">Remove</span>
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                </>
               )}
             </CardContent>
           </Card>
@@ -206,11 +330,11 @@ export function Resume() {
               <CardTitle className="flex items-center gap-2">AI Analysis</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {latest?.parsed_content?.skills?.length ? (
+              {current?.parsed_content?.skills?.length ? (
                 <div className="space-y-2">
                   <p className="text-sm font-medium">Extracted Skills</p>
                   <div className="flex flex-wrap gap-2">
-                    {(latest.parsed_content.skills as string[]).slice(0, 10).map((s) => (
+                    {(current.parsed_content.skills as string[]).slice(0, 10).map((s) => (
                       <span key={s} className="px-2 py-0.5 bg-white dark:bg-gray-800 rounded text-xs">
                         {s}
                       </span>
@@ -222,14 +346,36 @@ export function Resume() {
                   Upload a resume to get AI-powered parsing and improvement suggestions.
                 </p>
               )}
-              {resumes.length > 1 && (
+              {resumes.length > 0 && (
                 <div className="pt-4 border-t">
                   <p className="text-sm font-medium mb-2">Version History</p>
-                  <div className="space-y-1 text-sm text-gray-600 dark:text-gray-400">
-                    {resumes.slice(0, 5).map((r) => (
-                      <div key={r.id} className="flex justify-between">
-                        <span>v{r.version}</span>
-                        <span>{new Date(r.uploaded_at).toLocaleDateString()}</span>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                    Which resume file each version refers to:
+                  </p>
+                  <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+                    {resumes.slice(0, 10).map((r) => (
+                      <div key={r.id} className="flex items-center justify-between gap-2 flex-wrap">
+                        <span className="min-w-0 truncate" title={resumeDisplayName(r)}>
+                          <span className="font-medium text-gray-700 dark:text-gray-300">Version {r.version}</span>
+                          <span className="mx-1.5">·</span>
+                          <span className="truncate">{resumeDisplayName(r)}</span>
+                          <span className="mx-1.5">·</span>
+                          <span>{new Date(r.uploaded_at).toLocaleDateString()}</span>
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 text-gray-500 hover:text-red-600 dark:hover:text-red-400 shrink-0"
+                          onClick={() => handleRemove(r, `Version ${r.version} (${resumeDisplayName(r)})`)}
+                          disabled={deletingId === r.id}
+                          title={`Remove version ${r.version}`}
+                        >
+                          {deletingId === r.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-4 h-4" />
+                          )}
+                        </Button>
                       </div>
                     ))}
                   </div>
