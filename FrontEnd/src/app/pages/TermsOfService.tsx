@@ -74,6 +74,26 @@ export function TermsOfService() {
               </ul>
             </section>
 
+            {/* Job search coverage notice */}
+            <section>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">
+                Job Search Coverage
+              </h2>
+              <p className="text-gray-600 dark:text-gray-400 leading-relaxed mb-4">
+                HireSense can only search and monitor job postings available via the public sources
+                we integrate with (for example, Remotive and We Work Remotely). The Service cannot
+                search private, enterprise-only, or otherwise restricted listings that are not
+                accessible through these supported sources. By creating an account and uploading a
+                resume, you acknowledge that job discovery is limited to the coverage of the active
+                job sources and that not all available positions on the internet or within specific
+                organizations will be discoverable through HireSense.
+              </p>
+              <p className="text-gray-600 dark:text-gray-400 leading-relaxed">
+                We will also remind you of these limitations when you create an account and when you
+                upload a resume.
+              </p>
+            </section>
+
             {/* Section 3 */}
             <section>
               <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">

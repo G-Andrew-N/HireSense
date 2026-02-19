@@ -62,9 +62,17 @@ export function Landing() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 }}
-              className="text-lg sm:text-xl text-gray-400 mb-10 max-w-2xl mx-auto"
+              className="text-lg sm:text-xl text-gray-400 mb-4 max-w-2xl mx-auto"
             >
               Automate your job search, analyze resume matches, and get AI-driven recommendations to increase your interview success rate.
+            </motion.p>
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.35 }}
+              className="text-sm text-emerald-200 max-w-2xl mx-auto mb-10"
+            >
+              HireSense focuses on discovering remote roles listed on supported public job sources (for example, Remotive and We Work Remotely). It does not search private or enterprise-only listings.
             </motion.p>
 
             {/* CTA Buttons */}

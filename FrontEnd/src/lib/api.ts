@@ -229,12 +229,53 @@ export async function getResumes(): Promise<Resume[]> {
   return Array.isArray(data) ? data : [];
 }
 
-export async function uploadResume(file: File): Promise<Resume> {
+export async function uploadResume(file: File, onProgress?: (p: number) => void): Promise<Resume> {
   const form = new FormData();
   form.append('file', file);
-  return apiRequest<Resume>('/resumes/', {
-    method: 'POST',
-    body: form,
+
+  // Use XMLHttpRequest to get upload progress events
+  const token = localStorage.getItem('access');
+  return new Promise<Resume>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const url = `${API_BASE}/resumes/`;
+    xhr.open('POST', url, true);
+    if (token) {
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    }
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) {
+        const pct = Math.round((e.loaded / e.total) * 100);
+        try {
+          onProgress(pct);
+        } catch {}
+      }
+    };
+
+    xhr.onload = () => {
+      const status = xhr.status;
+      const text = xhr.responseText || '';
+      if (status >= 200 && status < 300) {
+        try {
+          const data = JSON.parse(text || '{}');
+          resolve(data as Resume);
+        } catch (err) {
+          reject(new Error('Invalid JSON response'));
+        }
+      } else {
+        let errBody: ApiError = { detail: xhr.statusText };
+        try {
+          errBody = JSON.parse(text || '{}');
+        } catch {}
+        const err = new Error(errBody.detail || `Request failed: ${status}`) as Error & { status?: number; body?: ApiError };
+        err.status = status;
+        err.body = errBody;
+        reject(err);
+      }
+    };
+
+    xhr.onerror = () => reject(new Error('Network error'));
+    xhr.send(form);
   });
 }
 

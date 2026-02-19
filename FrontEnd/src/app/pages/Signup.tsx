@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
+import { useBanner } from "../../lib/banner-context";
 import { Link, useNavigate } from "react-router";
 import { register } from "../../lib/api";
 import { useAuth } from "../../lib/auth-context";
@@ -12,6 +13,7 @@ import { motion } from "motion/react";
 export function Signup() {
   const navigate = useNavigate();
   const { setUser } = useAuth();
+  const { show: showBanner } = useBanner();
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -38,6 +40,17 @@ export function Signup() {
         avatarFile ?? undefined
       );
       setUser(res.user);
+      // show persistent site-wide banner about coverage
+      try {
+        showBanner(
+          "HireSense searches only jobs available via supported public sources (e.g., Remotive, WeWorkRemotely). It cannot search private or enterprise-only listings."
+        );
+      } catch {
+        toast.info(
+          "Note: HireSense searches only jobs available via supported public sources (e.g., Remotive, WeWorkRemotely).",
+          { duration: 8000 }
+        );
+      }
       navigate("/dashboard");
     } catch (err: unknown) {
       const msg = (err as { body?: { email?: string[]; detail?: string } })?.body?.email?.[0]

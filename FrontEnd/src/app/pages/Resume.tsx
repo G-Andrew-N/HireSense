@@ -15,11 +15,13 @@ import {
 } from "lucide-react";
 import { getResumes, uploadResume, downloadResume, deleteResume, setResumePrimary, type Resume, type MatchAnalysisStatus } from "../../lib/api";
 import { useScan } from "../../lib/scan-context";
+import { useBanner } from "../../lib/banner-context";
 
 export function Resume() {
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [settingPrimaryId, setSettingPrimaryId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -43,19 +45,35 @@ export function Resume() {
     r.original_filename || r.file?.split("/").pop() || "Resume";
 
   const { setScanning } = useScan();
+  const { show: showBanner } = useBanner();
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
+    setUploadProgress(0);
     try {
-      const resp = await uploadResume(file) as Resume & { match_analysis?: MatchAnalysisStatus };
+      const resp = (await uploadResume(file, (p) => setUploadProgress(p))) as Resume & { match_analysis?: MatchAnalysisStatus };
+      setUploadProgress(100);
       toast.success("Resume uploaded successfully");
+      try {
+        showBanner(
+          "HireSense searches only jobs available via supported public sources (e.g., Remotive, WeWorkRemotely). It cannot search private or enterprise-only listings."
+        );
+      } catch {
+        toast.info(
+          "Note: HireSense searches only jobs available via supported public sources (e.g., Remotive, WeWorkRemotely).",
+          { duration: 8000 }
+        );
+      }
       // If backend started async match analysis, set scanning so JobMatches polls
       if (resp.match_analysis?.started) {
         if (resp.match_analysis.async) {
           setScanning(true);
           window.dispatchEvent(new CustomEvent("hiresense:scan-start"));
+          try {
+            localStorage.setItem("hiresense:scan-pending", "1");
+          } catch {}
           toast.info("Match analysis started — scanning for jobs and regenerating insights...");
         } else {
           setScanning(false);
@@ -71,6 +89,8 @@ export function Resume() {
       toast.error(String(msg));
     } finally {
       setUploading(false);
+      // reset progress after a short delay so user sees full bar
+      setTimeout(() => setUploadProgress(0), 800);
       e.target.value = "";
     }
   };
@@ -109,6 +129,9 @@ export function Resume() {
         if (resp.match_analysis.async) {
           setScanning(true);
           window.dispatchEvent(new CustomEvent("hiresense:scan-start"));
+          try {
+            localStorage.setItem("hiresense:scan-pending", "1");
+          } catch {}
           toast.info("Match analysis started — scanning for jobs and regenerating insights...");
         } else {
           setScanning(false);
@@ -229,8 +252,9 @@ export function Resume() {
                     <div className="space-y-2">
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600 dark:text-gray-400">Uploading...</span>
+                        <span className="text-sm text-gray-500">{uploadProgress}%</span>
                       </div>
-                      <Progress value={50} className="animate-pulse" />
+                      <Progress value={uploadProgress} />
                     </div>
                   )}
                 </div>

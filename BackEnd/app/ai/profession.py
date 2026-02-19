@@ -57,6 +57,30 @@ def get_profession_for_job_search(resume_text: str) -> str:
         return "jobs"
 
 
+def _is_developer_profession(profession: str) -> bool:
+    """True if the profession is software/developer/tech for fallback logic."""
+    if not profession or profession.lower() == "jobs":
+        return False
+    p = profession.lower()
+    return any(
+        k in p
+        for k in (
+            "developer",
+            "engineer",
+            "software",
+            "programmer",
+            "front end",
+            "frontend",
+            "backend",
+            "full stack",
+            "fullstack",
+            "web dev",
+            "programming",
+            "dev ",
+        )
+    )
+
+
 def get_profession_and_industry(resume_text: str) -> tuple[str, str]:
     """Return (profession, industry) where industry is a short tag (e.g. 'software', 'real_estate').
     Falls back to simple heuristics if AI call fails."""

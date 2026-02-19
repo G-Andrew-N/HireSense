@@ -64,9 +64,45 @@ export function JobMatches() {
       .finally(() => { if (mountedRef.current) setLoading(false); });
   }, []);
 
+  const handleScan = useCallback(async () => {
+    setScanning(true);
+    setMatches([]); // Only show this run's opportunities; clear previous list
+    toast.info("Reviewing your resume and finding jobs for your profession…");
+    try {
+      let totalCreated = 0;
+      let hasMore = true;
+      while (hasMore && mountedRef.current) {
+        const { matches: newMatches, has_more } = await triggerMatchAnalysisChunk(3);
+        if (newMatches.length > 0 && mountedRef.current) {
+          setMatches((prev) => [...prev, ...newMatches]);
+          totalCreated += newMatches.length;
+        }
+        hasMore = has_more;
+      }
+      if (totalCreated > 0) {
+        toast.success(`Found ${totalCreated} job match${totalCreated === 1 ? "" : "es"}!`);
+      } else {
+        toast.info("No jobs found for your profession right now. Try again later.");
+      }
+    } catch (err: unknown) {
+      const msg = (err as { body?: { detail?: string } })?.body?.detail ?? "Scan failed";
+      toast.error(msg);
+    } finally {
+      setScanning(false);
+    }
+  }, [setScanning]);
+
   useEffect(() => {
     mountedRef.current = true;
     load();
+    // If a resume upload previously set a pending scan flag, start scanning automatically
+    try {
+      const pending = localStorage.getItem("hiresense:scan-pending");
+      if (pending) {
+        localStorage.removeItem("hiresense:scan-pending");
+        if (mountedRef.current) handleScan();
+      }
+    } catch {}
     return () => { mountedRef.current = false; };
   }, [load]);
 
@@ -129,33 +165,6 @@ export function JobMatches() {
     }
   }, [highlightId, loading, highlightVisible, setSearchParams]);
 
-  const handleScan = async () => {
-    setScanning(true);
-    setMatches([]); // Only show this run's opportunities; clear previous list
-    toast.info("Reviewing your resume and finding jobs for your profession…");
-    try {
-      let totalCreated = 0;
-      let hasMore = true;
-      while (hasMore && mountedRef.current) {
-        const { matches: newMatches, has_more } = await triggerMatchAnalysisChunk(3);
-        if (newMatches.length > 0 && mountedRef.current) {
-          setMatches((prev) => [...prev, ...newMatches]);
-          totalCreated += newMatches.length;
-        }
-        hasMore = has_more;
-      }
-      if (totalCreated > 0) {
-        toast.success(`Found ${totalCreated} job match${totalCreated === 1 ? "" : "es"}!`);
-      } else {
-        toast.info("No jobs found for your profession right now. Try again later.");
-      }
-    } catch (err: unknown) {
-      const msg = (err as { body?: { detail?: string } })?.body?.detail ?? "Scan failed";
-      toast.error(msg);
-    } finally {
-      setScanning(false);
-    }
-  };
 
   const getMatchColor = (score: number) => {
     if (score >= 85) return "bg-green-100 text-green-700 border-green-200";
