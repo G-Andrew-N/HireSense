@@ -5,7 +5,6 @@ from datetime import date, timedelta
 from celery import shared_task
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.core.mail import EmailMessage, send_mail
 from django.db.models import Q
 from django.utils import timezone
 
@@ -1249,7 +1248,12 @@ def _build_weekly_report_html(user, total_matches, high_matches, top_matches):
 
 @shared_task
 def send_notification_to_users(notification_id):
-    """Send a system notification to all users."""
+    """Send a system notification to all users (local database only).
+    
+    NOTE: Email functionality is currently disabled. This iteration relies on
+    in-app notifications only. Email will be re-enabled in a future iteration.
+    Users will see notifications in the Notifications page and header badge.
+    """
     from .models import SystemNotification, UserNotification
     
     try:
@@ -1265,65 +1269,11 @@ def send_notification_to_users(notification_id):
     # Get all active users
     users = User.objects.filter(is_active=True)
     
-    subject = f"[HireSense] {notification.title}"
-    
-    # Create HTML email body
-    html_message = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <style>
-            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; line-height: 1.6; color: #333; }}
-            .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-            .header {{ background-color: #059669; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }}
-            .header h2 {{ margin: 0; }}
-            .header .type {{ font-size: 12px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px; }}
-            .content {{ background-color: #fff; border: 1px solid #e5e7eb; padding: 30px; border-radius: 0 0 8px 8px; }}
-            .content h3 {{ margin-top: 0; color: #059669; }}
-            .content p {{ margin: 15px 0; }}
-            .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280; text-align: center; }}
-            .button {{ display: inline-block; background-color: #059669; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: 600; }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <div class="type">{notification.get_notification_type_display()}</div>
-                <h2>{notification.title}</h2>
-            </div>
-            <div class="content">
-                <p>{notification.message.replace(chr(10), '<br>')}</p>
-                <p style="text-align: center; margin-top: 30px;">
-                    <a href="https://hiresense.local/dashboard" class="button">View Dashboard</a>
-                </p>
-            </div>
-            <div class="footer">
-                <p>This is an important notification from HireSense Team.</p>
-                <p><a href="https://hiresense.local/settings" style="color: #059669; text-decoration: none;">Manage notification preferences</a></p>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-    
-    # Send to all users and create notification receipts
-    sent_count = 0
-    failed_count = 0
+    # Create notification receipts for all active users (local database storage only)
     user_notifications = []
     
     for user in users:
         try:
-            email_message = EmailMessage(
-                subject=subject,
-                body=html_message,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                to=[user.email]
-            )
-            email_message.content_subtype = "html"  # Set content type to HTML
-            email_message.send()
-            sent_count += 1
-            
             # Create user notification receipt
             user_notifications.append(
                 UserNotification(
@@ -1333,8 +1283,7 @@ def send_notification_to_users(notification_id):
                 )
             )
         except Exception as e:
-            logger.error(f"Failed to send notification to {user.email}: {str(e)}")
-            failed_count += 1
+            logger.error(f"Failed to create notification receipt for {user.email}: {str(e)}")
     
     # Bulk create user notification records
     if user_notifications:
@@ -1345,10 +1294,11 @@ def send_notification_to_users(notification_id):
     notification.sent_at = timezone.now()
     notification.save()
     
-    logger.info(f"Notification {notification_id} sent to {sent_count} users (failures: {failed_count})")
+    sent_count = len(user_notifications)
+    logger.info(f"Notification {notification_id} created for {sent_count} users (email disabled, using local notifications)")
     
     return {
         "notification_id": notification_id,
         "sent_count": sent_count,
-        "failed_count": failed_count,
+        "failed_count": 0,
     }
