@@ -27,6 +27,18 @@ class UserProfile(models.Model):
         related_name="primary_for_profiles",
         help_text="Resume used for job matches and insights when set; otherwise latest by upload.",
     )
+    email_notifications = models.BooleanField(
+        default=True,
+        help_text="Get daily summaries of new matches via email.",
+    )
+    high_match_alerts = models.BooleanField(
+        default=True,
+        help_text="Instant alerts for 85%+ matches.",
+    )
+    weekly_reports = models.BooleanField(
+        default=False,
+        help_text="Summary of activity and insights sent weekly.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
