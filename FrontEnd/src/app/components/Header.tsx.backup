@@ -21,30 +21,74 @@ interface AdminNotification {
 
 export function Header({ title, subtitle, showSearch = false }: HeaderProps) {
   const navigate = useNavigate();
-  const { notifications } = useNotification();
-  const [adminNotifications, setAdminNotifications] = useState<AdminNotification[]>([]);
+  const [adminUnreadCount, setAdminUnreadCount] = useState(0);
+  
+  // Get app notifications unread count
+  let appUnreadCount = 0;
+  try {
+    const { notifications } = useNotification();
+    appUnreadCount = notifications.filter(n => !n.read).length;
+  } catch {
+    // Not inside notification provider, ignore
+  }
 
-  // Fetch admin notifications
+  // Fetch admin notifications unread count
   useEffect(() => {
-    const fetchAdminNotifications = async () => {
+    const fetchAdminUnreadCount = async () => {
       try {
         const response = await apiRequest<{ results: AdminNotification[] }>('/notifications/');
-        setAdminNotifications(response.results || []);
+        const unreadCount = (response.results || []).filter(n => !n.is_read).length;
+        setAdminUnreadCount(unreadCount);
       } catch (error) {
-        // Silently fail - user might not be logged in
+        // Silently fail - user might not be logged in or endpoint not available
       }
     };
 
-    fetchAdminNotifications();
-    // Refresh every minute
-    const interval = setInterval(fetchAdminNotifications, 60000);
+    fetchAdminUnreadCount();
+    // Refresh every 60 seconds
+    const interval = setInterval(fetchAdminUnreadCount, 60000);
     return () => clearInterval(interval);
   }, []);
 
-  // Calculate total unread count
-  const appUnreadCount = notifications.filter(n => !n.read).length;
-  const adminUnreadCount = adminNotifications.filter(n => !n.is_read).length;
-  const totalUnreadCount = appUnreadCount + adminUnreadCount;
+  const totalUnreadCount = appUnreadCount + adminUnreadCount
+interface HeaderProps {
+  title: string;
+  subtitle?: string;
+  showSearch?: boolean;
+}
+
+export function Header({ title, subtitle, showSearch = false }: HeaderProps) {
+  const navigate = useNavigate();
+  const [adminUnreadCount, setAdminUnreadCount] = useState(0);
+  
+  // Get app notifications unread count
+  let appUnreadCount = 0;
+  try {
+    const { notifications } = useNotification();
+    appUnreadCount = notifications.filter(n => !n.read).length;
+  } catch {
+    // Not in notification context
+  }
+
+  // Fetch admin notifications unread count
+  useEffect(() => {
+    const fetchAdminUnread = async () => {
+      try {
+        const response = await apiRequest<{ results: AdminNotification[] }>('/notifications/');
+        const unreadCount = response.results?.filter(n => !n.is_read).length || 0;
+        setAdminUnreadCount(unreadCount);
+      } catch {
+        // Ignore errors (user might not be logged in)
+      }
+    };
+    
+    fetchAdminUnread();
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchAdminUnread, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const totalUnread = appUnreadCount + adminUnreadCount;
 
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 sm:px-6 lg:px-8 py-4 sm:py-6 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 gap-4">
@@ -89,11 +133,17 @@ export function Header({ title, subtitle, showSearch = false }: HeaderProps) {
           className="relative flex-shrink-0 hidden lg:flex"
           onClick={() => navigate("/dashboard/notifications")}
         >
-          <Bell className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-          {totalUnreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 min-w-5 h-5 flex items-center justify-center bg-blue-600 text-white text-xs font-bold rounded-full px-1">
-              {totalUnreadCount}
-            </span>
+          {totalUnreadCount > 0 ? (
+            <>
+              <Bell className="w-5 h-5 text-blue-600 dark:text-blue-400 fill-blue-600 dark:fill-blue-400" />
+              {totalUnreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 flex items-center justify-center min-w-[18px] h-[18px] px-1 bg-red-600 text-white text-[10px] font-bold rounded-full">
+                  {totalUnreadCount > 99 ? '99+' : totalUnreadCount}
+                </span>
+              )}
+            </>
+          ) : (
+            <Bell className="w-5 h-5 text-gray-600 dark:text-gray-400" />
           )}
         </Button>
       </div>

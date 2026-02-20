@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { 
   LayoutDashboard, 
@@ -19,6 +19,8 @@ import { cn } from "./ui/utils";
 import { Button } from "./ui/button";
 import { motion, AnimatePresence } from "motion/react";
 import { useTheme } from "next-themes";
+import { useNotification } from "../../lib/notification-context";
+import { apiRequest } from "../../lib/api";
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -28,12 +30,41 @@ const navigation = [
   { name: "Settings", href: "/dashboard/settings", icon: Settings },
 ];
 
+interface AdminNotification {
+  id: number;
+  is_read: boolean;
+}
+
 export function MobileNav() {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
   const { user, logout } = useAuth();
+  const { notifications } = useNotification();
+  const [adminNotifications, setAdminNotifications] = useState<AdminNotification[]>([]);
+
+  // Fetch admin notifications
+  useEffect(() => {
+    const fetchAdminNotifications = async () => {
+      try {
+        const response = await apiRequest<{ results: AdminNotification[] }>('/notifications/');
+        setAdminNotifications(response.results || []);
+      } catch (error) {
+        // Silently fail - user might not be logged in
+      }
+    };
+
+    fetchAdminNotifications();
+    // Refresh every minute
+    const interval = setInterval(fetchAdminNotifications, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Calculate total unread count
+  const appUnreadCount = notifications.filter(n => !n.read).length;
+  const adminUnreadCount = adminNotifications.filter(n => !n.is_read).length;
+  const totalUnreadCount = appUnreadCount + adminUnreadCount;
 
   const handleLogout = async () => {
     setIsOpen(false);
@@ -69,7 +100,11 @@ export function MobileNav() {
               aria-label="Notifications"
             >
               <Bell className="w-5 h-5" />
-              <span className="absolute top-2 right-2 w-2 h-2 bg-emerald-600 rounded-full" />
+              {totalUnreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-5 h-5 flex items-center justify-center bg-emerald-600 text-white text-xs font-bold rounded-full px-1">
+                  {totalUnreadCount}
+                </span>
+              )}
             </button>
 
             {/* Theme Toggle */}
