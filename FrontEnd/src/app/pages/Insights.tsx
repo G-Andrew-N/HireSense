@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { toast } from "sonner";
 import { Header } from "../components/Header";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
@@ -24,6 +24,7 @@ export function Insights() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
+  const prevScanningRef = useRef<boolean>(false);
 
   const loadInsights = () => {
     setLoading(true);
@@ -40,11 +41,13 @@ export function Insights() {
   const { isScanning } = useScan();
 
   useEffect(() => {
-    if (isScanning) {
+    // Only notify when scanning transitions from false -> true (avoid repeating on mount)
+    if (isScanning && !prevScanningRef.current) {
       setInsights([]);
       setLoading(true);
       toast.info("Regenerating insights for the new resume...");
     }
+    prevScanningRef.current = isScanning;
   }, [isScanning]);
 
   const handleGenerate = () => {
