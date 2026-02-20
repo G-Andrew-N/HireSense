@@ -694,28 +694,37 @@ class JobSourcesView(APIView):
 
     def get(self, request):
         """Get list of active job sources and their status."""
-        sources = [
+        # Get built-in job sites
+        builtin_sites = JobSite.objects.filter(is_builtin=True).order_by("name")
+        
+        # Build response with site information
+        sources = []
+        for site in builtin_sites:
+            # Determine type from source_type
+            site_type_map = {
+                "rss": "RSS Feed",
+                "generic": "Web Scraper",
+                "indeed": "Indeed API",
+                "linkedin": "LinkedIn API",
+                "glassdoor": "Glassdoor API",
+                "ziprecruiter": "ZipRecruiter API",
+            }
+            
+            sources.append({
+                "name": site.name,
+                "type": site_type_map.get(site.source_type, site.source_type),
+                "description": f"Remote job source ({site_type_map.get(site.source_type, site.source_type).lower()})",
+                "status": "active" if site.enabled else "disabled",
+                "coverage": site.scrape_config.get("keywords", "All positions"),
+            })
+        
+        return Response(
             {
-                "name": "Remotive",
-                "type": "api",
-                "description": "Remote job search API (free, no authentication required)",
-                "status": "active",
-                "coverage": "Remote positions across all industries globally",
+                "sources": sources,
+                "total": len(sources),
+                "active_count": sum(1 for s in sources if s["status"] == "active"),
+                "primary": "Remotive"
             },
-            {
-                "name": "We Work Remotely",
-                "type": "rss",
-                "description": "Specialized remote job board",
-                "status": "active",
-                "coverage": "Remote technology/programming roles",
-            },
-            {
-                "name": "Indeed RSS",
-                "type": "rss",
-                "description": "Indeed job listings",
-                "status": "disabled",
-                "coverage": "All industries",
-                "note": "Disabled due to anti-bot protection (403/404 errors)",
-            },
-        ]
-        return Response({"sources": sources, "primary": "Remotive"}, status=status.HTTP_200_OK)
+            status=status.HTTP_200_OK,
+        )
+
