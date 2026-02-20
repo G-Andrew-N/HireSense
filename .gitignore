@@ -22,8 +22,32 @@ Thumbs.db
 
 env
 
+# Environment files
+.env
+.env.local
+.env.*.local
+*.env
+
+# Secrets and credentials
+credentials.json
+secrets/
+*.pem
+*.key
+
+# Redis dump
+dump.rdb
+
+# Logs
+logs/
+*.log
+
 ADMIN_DASHBOARD.MD
 ADMIN_IMPLEMENTATION_SUMMARY.MD
 ADMIN_TESTING.MD
 ADMIN_QUICK_REFERENCE.MD
 ADMIN_SETUP_GUIDE.MD
+ADMIN_DASHBOARD.md
+ADMIN_IMPLEMENTATION_SUMMARY.md
+ADMIN_TESTING.md
+ADMIN_QUICK_REFERENCE.md
+ADMIN_SETUP_GUIDE.md
