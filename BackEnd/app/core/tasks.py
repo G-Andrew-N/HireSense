@@ -425,9 +425,9 @@ def _run_match_analysis_for_user(user_id: int) -> dict:
     if fetch_result.get("stored", 0) == 0 and _is_developer_profession(profession):
         logger.info("Primary fetch returned 0 results for developer role, trying fallback")
         _fetch_wwr_programming_jobs()
-    # Match against jobs from all enabled sources
+    # Match against jobs from all enabled sources - process more jobs to match fetch count
     enabled_sources = _get_enabled_job_source_names()
-    recent = JobPosting.objects.filter(source__in=enabled_sources).order_by("-fetched_at")[:10]
+    recent = JobPosting.objects.filter(source__in=enabled_sources).order_by("-fetched_at")[:30]
 
     from django.conf import settings
 

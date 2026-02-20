@@ -90,7 +90,6 @@ export function Sidebar() {
         </div>
         {user?.is_superuser && (
           <motion.div
-            whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
           >
             <Link
@@ -103,7 +102,6 @@ export function Sidebar() {
           </motion.div>
         )}
         <motion.div
-          whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
         >
           <Button

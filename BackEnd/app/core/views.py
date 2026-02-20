@@ -668,33 +668,35 @@ class JobMatchViewSet(ModelViewSet):
             match_score__gte=25  # Only show good matches
         ).order_by("-match_score", "-created_at")
         
-        # Get recently ANALYZED jobs (JobMatch created in last 10 minutes, regardless of score)
-        # These are shown as "analyzing" until they reach the score threshold or timeout
+        # Find pending jobs: recently fetched JobPostings that DON'T have a JobMatch yet
+        # These are the jobs queued for analysis but not yet processed by the Celery task
         from django.utils import timezone
         from datetime import timedelta
         
-        analysis_cutoff = timezone.now() - timedelta(minutes=10)
-        recent_cutoff = timezone.now() - timedelta(minutes=5)
-        all_recent = JobPosting.objects.filter(fetched_at__gte=recent_cutoff)
-        logger.info(f"with_pending: enabled_sources={enabled_sources}, all_recent_count={all_recent.count()}")
+        recent_cutoff = timezone.now() - timedelta(minutes=10)  # Look at jobs fetched in last 10 minutes
         
-        # Log all recent jobs with their sources
-        for jp in all_recent:
-            logger.info(f"  Recent job: id={jp.id}, source={jp.source}, title={jp.title}")
-        
-        # Show as pending ONLY jobs that have JobMatch records created recently (being analyzed right now)
-        # Don't show unmatched jobs that haven't been queued for analysis yet
-        pending_postings = JobMatch.objects.filter(
-            user=request.user,
+        # Get all recent job postings from enabled sources
+        recent_postings = JobPosting.objects.filter(
             source__in=enabled_sources,
-            created_at__gte=analysis_cutoff,
-            match_score__lt=25  # Only show analyzing jobs (score < 25 means not in matched list)
-        ).values_list('job_posting', flat=True)
+            fetched_at__gte=recent_cutoff
+        ).order_by("-fetched_at")
         
-        # Convert IDs back to JobPosting objects
-        pending_posting_objs = JobPosting.objects.filter(id__in=pending_postings)
+        logger.info(f"with_pending: enabled_sources={enabled_sources}, recent_postings_count={recent_postings.count()}")
         
-        logger.info(f"with_pending: pending_jobs_count={len(pending_posting_objs)}")
+        # Get IDs of jobs that have already been analyzed (have a JobMatch record)
+        analyzed_posting_ids = JobMatch.objects.filter(
+            user=request.user,
+            job_posting__in=recent_postings
+        ).values_list('job_posting_id', flat=True)
+        
+        # Pending jobs = recent postings that DON'T have a JobMatch record yet
+        pending_postings = recent_postings.exclude(id__in=analyzed_posting_ids)
+        
+        logger.info(f"with_pending: pending_jobs_count={pending_postings.count()}, analyzed_count={len(analyzed_posting_ids)}")
+        
+        # Log pending jobs for debugging
+        for jp in pending_postings[:5]:  # Log first 5
+            logger.info(f"  Pending job: id={jp.id}, source={jp.source}, title={jp.title}")
         
         # Serialize matched jobs
         matched_data = JobMatchSerializer(matched, many=True).data
@@ -708,7 +710,7 @@ class JobMatchViewSet(ModelViewSet):
         # Otherwise, showing random tech/design jobs to a real estate agent is misleading
         if keywords and query.lower() != "jobs":
             filtered_pending = []
-            for posting in pending_posting_objs:
+            for posting in pending_postings:
                 title_lower = (posting.title or '').lower()
                 desc_lower = (posting.description or '')[:500].lower()  # First 500 chars of description
                 
@@ -720,9 +722,12 @@ class JobMatchViewSet(ModelViewSet):
                 # This prevents weak matches like "real-time" matching "Real Estate Agent"
                 if title_matches >= 1 or desc_matches >= 2:
                     filtered_pending.append(posting)
+            
+            logger.info(f"with_pending: filtered_pending_count={len(filtered_pending)} (from {pending_postings.count()} total)")
         else:
             # Don't show pending jobs when profession is unknown
             filtered_pending = []
+            logger.info(f"with_pending: no profession keywords, hiding all pending jobs")
 
         # Convert pending postings to a match-like format with status='analyzing'
         pending_data = []

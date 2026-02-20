@@ -296,7 +296,7 @@ export function Dashboard() {
                 <Link to="/dashboard/matches">View All</Link>
               </Button>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6">
               {loading ? (
                 <div className="py-8 text-center text-gray-500">Loading...</div>
               ) : topMatches.length === 0 ? (
@@ -313,8 +313,7 @@ export function Dashboard() {
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: 0.8 + index * 0.1, duration: 0.5 }}
-                      whileHover={{ scale: 1.02, transition: { duration: 0.2 } }}
-                      className="flex items-start gap-4 p-4 border border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700 hover:bg-blue-50/50 dark:hover:bg-blue-950/50 transition-all cursor-pointer"
+                      className="flex items-start gap-4 p-4 border border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700 hover:bg-blue-50/50 dark:hover:bg-blue-950/50 transition-all cursor-pointer mb-2"
                     >
                     <div className="w-12 h-12 bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-900 dark:to-teal-900 flex items-center justify-center flex-shrink-0">
                       <Briefcase className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
