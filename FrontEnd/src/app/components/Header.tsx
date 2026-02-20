@@ -28,8 +28,9 @@ export function Header({ title, subtitle, showSearch = false }: HeaderProps) {
   useEffect(() => {
     const fetchAdminNotifications = async () => {
       try {
-        const response = await apiRequest<{ results: AdminNotification[] }>('/notifications/');
-        setAdminNotifications(response.results || []);
+        const response = await apiRequest<AdminNotification[] | { results: AdminNotification[] }>('/notifications/');
+        const notifications = Array.isArray(response) ? response : (response.results || []);
+        setAdminNotifications(notifications);
       } catch (error) {
         // Silently fail - user might not be logged in
       }

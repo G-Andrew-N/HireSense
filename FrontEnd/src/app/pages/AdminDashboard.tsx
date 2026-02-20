@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { useAuth } from '@/lib/auth-context';
-import { apiRequest } from '@/lib/api';
+import { useAuth } from '../../lib/auth-context';
+import { apiRequest } from '../../lib/api';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface Toast {

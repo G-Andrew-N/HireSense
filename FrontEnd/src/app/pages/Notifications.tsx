@@ -2,6 +2,7 @@ import { Header } from "../components/Header";
 import { Card, CardContent } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { NotificationDetailModal } from "../components/NotificationDetailModal";
+import { AdminNotificationDetailModal } from "../components/AdminNotificationDetailModal";
 import { 
   Bell,
   CheckCheck,
@@ -88,15 +89,20 @@ export function Notifications() {
   const [loadingAdmin, setLoadingAdmin] = useState(true);
   const [filter, setFilter] = useState<"all" | "unread" | "system">("all");
   const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
+  const [selectedAdminNotification, setSelectedAdminNotification] = useState<AdminNotification | null>(null);
 
-  const unreadCount = notifications.filter(n => !n.read).length;
+  // Calculate unread counts for both app and system notifications
+  const appUnreadCount = notifications.filter(n => !n.read).length;
+  const adminUnreadCount = adminNotifications.filter(n => !n.is_read).length;
+  const totalUnreadCount = appUnreadCount + adminUnreadCount;
 
   // Fetch admin notifications
   const fetchAdminNotifications = async () => {
     try {
       setLoadingAdmin(true);
-      const response = await apiRequest<{ results: AdminNotification[] }>('/notifications/');
-      setAdminNotifications(response.results || []);
+      const response = await apiRequest<AdminNotification[] | { results: AdminNotification[] }>('/notifications/');
+      const notifications = Array.isArray(response) ? response : (response.results || []);
+      setAdminNotifications(notifications);
     } catch (error) {
       console.error('Failed to fetch admin notifications:', error);
     } finally {
@@ -108,14 +114,32 @@ export function Notifications() {
     fetchAdminNotifications();
   }, []);
 
-  const adminUnreadCount = adminNotifications.filter(n => !n.is_read).length;
-  const appUnreadCount = unreadCount;
+
 
   const handleNotificationClick = (notification: Notification) => {
     setSelectedNotification(notification);
     // Mark as read when opening details
     if (!notification.read) {
       markAsRead(notification.id);
+    }
+  };
+
+  const handleAdminNotificationClick = async (notification: AdminNotification) => {
+    setSelectedAdminNotification(notification);
+    // Mark as read when opening details
+    if (!notification.is_read) {
+      try {
+        await apiRequest(`/notifications/${notification.id}/mark_as_read/`, {
+          method: 'POST',
+        });
+        
+        // Update local state
+        setAdminNotifications(adminNotifications.map(n =>
+          n.id === notification.id ? { ...n, is_read: true, read_at: new Date().toISOString() } : n
+        ));
+      } catch (error) {
+        console.error('Failed to mark notification as read:', error);
+      }
     }
   };
 
@@ -156,12 +180,16 @@ export function Notifications() {
     setSelectedNotification(null);
   };
 
+  const handleCloseAdminModal = () => {
+    setSelectedAdminNotification(null);
+  };
+
   const handleClearReadNotifications = () => {
     clearReadNotifications();
     setFilter("all"); // Reset to all view
   };
 
-  const readCount = notifications.length - unreadCount;
+  const appReadCount = notifications.length - appUnreadCount;
   const adminReadCount = adminNotifications.length - adminUnreadCount;
   
   let filteredNotifications = notifications;
@@ -177,13 +205,11 @@ export function Notifications() {
     // 'all' tab shows both
   }
 
-  const totalUnread = appUnreadCount + adminUnreadCount;
-
   return (
     <div className="flex flex-col h-full overflow-auto">
       <Header 
         title="Notifications" 
-        subtitle={`You have ${totalUnread} unread notification${totalUnread !== 1 ? 's' : ''}`}
+        subtitle={`You have ${totalUnreadCount} unread notification${totalUnreadCount !== 1 ? 's' : ''}`}
       />
       
       <div className="flex-1 p-4 sm:p-6 lg:p-8 pb-20 lg:pb-8">
@@ -204,7 +230,7 @@ export function Notifications() {
               onClick={() => setFilter("unread")}
               className={filter === "unread" ? "bg-gradient-to-r from-blue-600 to-purple-600" : ""}
             >
-              Unread ({totalUnread})
+              Unread ({totalUnreadCount})
             </Button>
             <Button
               variant={filter === "system" ? "default" : "outline"}
@@ -220,7 +246,7 @@ export function Notifications() {
 
           <div className="flex gap-2">
             {(filter === "all" && (appUnreadCount > 0 || adminUnreadCount > 0) || 
-              filter === "unread" && totalUnread > 0 ||
+              filter === "unread" && totalUnreadCount > 0 ||
               filter === "system" && adminUnreadCount > 0) && (
               <Button
                 variant="ghost"
@@ -247,120 +273,123 @@ export function Notifications() {
           </div>
         </div>
 
-        {/* System Notifications Section */}
-        {(filter === "all" || filter === "system") && adminNotifications.length > 0 && (
-          <div className="mb-8">
-            {filter === "all" && (
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                <Shield className="w-5 h-5" />
-                System Notifications
-              </h2>
-            )}
-            
-            <div className="space-y-3">
-              {filteredAdminNotifications.map((notification) => (
-                  <Card 
-                    key={notification.id}
-                    className={cn(
-                      "transition-all duration-200 hover:shadow-md cursor-pointer border-l-4",
-                      notification.is_read 
-                        ? "bg-white dark:bg-gray-900 border-l-transparent" 
-                        : "bg-green-50/50 dark:bg-green-950/20 border-l-green-600 dark:border-l-green-400"
-                    )}
-                    onClick={() => handleMarkAdminAsRead(notification)}
-                  >
-                    <CardContent className="p-4 sm:p-5">
-                      <div className="flex gap-4">
-                        {/* Icon */}
-                        <div className={cn(
-                          "flex-shrink-0 w-12 h-12 rounded-lg bg-gradient-to-br flex items-center justify-center",
-                          adminNotificationTypeColors[notification.notification_type] || adminNotificationTypeColors.info
-                        )}>
-                          <Shield className={cn("w-6 h-6", adminNotificationTypeIconColors[notification.notification_type] || adminNotificationTypeIconColors.info)} />
-                        </div>
+        <>
+          {/* System Notifications Section */}
+          {(filter === "all" || filter === "system" || (filter === "unread" && filteredAdminNotifications.length > 0)) && adminNotifications.length > 0 && (
+            <div className="mb-8">
+              {(filter === "all" || filter === "unread") && (
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                  <Shield className="w-5 h-5" />
+                  System Notifications
+                </h2>
+              )}
+              
+              <div className="space-y-3">
+                {filteredAdminNotifications.map((notification) => (
+                    <Card 
+                      key={notification.id}
+                      className={cn(
+                        "transition-all duration-200 hover:shadow-md cursor-pointer border-l-4",
+                        notification.is_read 
+                          ? "bg-white dark:bg-gray-900 border-l-transparent" 
+                          : "bg-green-50/50 dark:bg-green-950/20 border-l-green-600 dark:border-l-green-400"
+                      )}
+                      onClick={() => handleAdminNotificationClick(notification)}
+                    >
+                      <CardContent className="p-4 sm:p-5">
+                        <div className="flex gap-4">
+                          {/* Icon */}
+                          <div className={cn(
+                            "flex-shrink-0 w-12 h-12 rounded-lg bg-gradient-to-br flex items-center justify-center",
+                            adminNotificationTypeColors[notification.notification_type] || adminNotificationTypeColors.info
+                          )}>
+                            <Shield className={cn("w-6 h-6", adminNotificationTypeIconColors[notification.notification_type] || adminNotificationTypeIconColors.info)} />
+                          </div>
 
-                        {/* Content */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-2 mb-1">
-                            <div className="flex-1">
-                              <h3 className={cn(
-                                "font-semibold text-gray-900 dark:text-gray-100",
-                                !notification.is_read && "font-bold"
-                              )}>
-                                {notification.notification_title}
-                              </h3>
-                              <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                {adminNotificationTypeLabels[notification.notification_type] || notification.notification_type}
-                              </span>
+                          {/* Content */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-2 mb-1">
+                              <div className="flex-1">
+                                <h3 className={cn(
+                                  "font-semibold text-gray-900 dark:text-gray-100",
+                                  !notification.is_read && "font-bold"
+                                )}>
+                                  {notification.notification_title}
+                                </h3>
+                                <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                  {adminNotificationTypeLabels[notification.notification_type] || notification.notification_type}
+                                </span>
+                              </div>
+                              {!notification.is_read && (
+                                <div className="flex-shrink-0 w-2 h-2 bg-green-600 rounded-full" />
+                              )}
                             </div>
-                            {!notification.is_read && (
-                              <div className="flex-shrink-0 w-2 h-2 bg-green-600 rounded-full" />
-                            )}
-                          </div>
-                          
-                          <p className="text-sm text-gray-600 dark:text-gray-400 mb-2 line-clamp-2">
-                            {notification.notification_message}
-                          </p>
+                            
+                            <p className="text-sm text-gray-600 dark:text-gray-400 mb-2 line-clamp-2">
+                              {notification.notification_message}
+                            </p>
 
-                          <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-500">
-                            <Clock className="w-3 h-3" />
-                            <span>{new Date(notification.created_at).toLocaleString()}</span>
-                            {!notification.is_read && notification.read_at && (
-                              <> • Read: {new Date(notification.read_at).toLocaleString()}</>
-                            )}
+                            <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-500">
+                              <Clock className="w-3 h-3" />
+                              <span>{new Date(notification.created_at).toLocaleString()}</span>
+                              {!notification.is_read && notification.read_at && (
+                                <> • Read: {new Date(notification.read_at).toLocaleString()}</>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))
-              }
-            </div>
-          </div>
-        )}
-        
-        {/* Empty state for system notifications */}
-        {filter === "system" && adminNotifications.length === 0 && (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-              <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
-                <Shield className="w-8 h-8 text-gray-400" />
+                      </CardContent>
+                    </Card>
+                  ))
+                }
               </div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                No System Notifications
-              </h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400 max-w-sm">
-                There are no system notifications at the moment. You'll be notified about maintenance and important updates here.
-              </p>
-            </CardContent>
-          </Card>
-        )}
+            </div>
+          )}
+          
+          {/* Empty state for system notifications */}
+          {filter === "system" && adminNotifications.length === 0 && (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
+                  <Shield className="w-8 h-8 text-gray-400" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                  No System Notifications
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 max-w-sm">
+                  There are no system notifications at the moment. You'll be notified about maintenance and important updates here.
+                </p>
+              </CardContent>
+            </Card>
+          )}
 
-        {/* App Notifications Section */}
+          {/* App Notifications Section */}
         {(filter === "all" || filter !== "system") && (
           <div>
-            {filter === "all" && notifications.length > 0 && (
+            {(filter === "all" || filter === "unread") && notifications.length > 0 && (
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                 App Activity
               </h2>
             )}
             <div className="space-y-3">
               {filteredNotifications.length === 0 ? (
-                <Card>
-                  <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                    <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
-                      <Bell className="w-8 h-8 text-gray-400" />
-                    </div>
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                      No Notifications
-                    </h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 max-w-sm">
-                      {filter === "unread" 
-                        ? "You're all caught up! No unread notifications at the moment."
-                        : "You don't have any notifications yet. We'll notify you about job matches and updates."}
-                    </p>
-                  </CardContent>
-                </Card>
+                (filter !== "system" && filteredAdminNotifications.length > 0) ? null : (
+                  <Card>
+                    <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                      <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
+                        <Bell className="w-8 h-8 text-gray-400" />
+                      </div>
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                        No Notifications
+                      </h3>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 max-w-sm">
+                        {filter === "unread" 
+                          ? "You're all caught up! No unread notifications at the moment."
+                          : "You don't have any notifications yet. We'll notify you about job matches and updates."}
+                      </p>
+                    </CardContent>
+                  </Card>
+                )
               ) : (
                 filteredNotifications.map((notification) => {
                   const Icon = notificationIcons[notification.type];
@@ -424,6 +453,7 @@ export function Notifications() {
             </div>
           </div>
         )}
+        </>
       </div>
 
       {/* Notification Detail Modal */}
@@ -431,6 +461,14 @@ export function Notifications() {
         <NotificationDetailModal
           notification={selectedNotification}
           onClose={handleCloseModal}
+        />
+      )}
+
+      {/* Admin Notification Detail Modal */}
+      {selectedAdminNotification && (
+        <AdminNotificationDetailModal
+          notification={selectedAdminNotification}
+          onClose={handleCloseAdminModal}
         />
       )}
     </div>

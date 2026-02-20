@@ -10,7 +10,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from .job_sources.registry import fetch_jobs_for_site
-from .models import JobMatch, JobPosting, JobSite, Resume, UserProfile
+from .models import JobMatch, JobPosting, JobSite, Resume, ResumeInsight, UserProfile
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
