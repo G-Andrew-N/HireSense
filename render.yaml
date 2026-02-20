@@ -1,0 +1,59 @@
+services:
+  # Main Django Web Service
+  - type: web
+    name: hiresense-web
+    env: python
+    plan: free
+    buildCommand: >
+      cd BackEnd/app &&
+      pip install -r requirements.txt &&
+      python manage.py migrate &&
+      python manage.py collectstatic --noinput
+    startCommand: >
+      cd BackEnd/app &&
+      gunicorn -w 3 -b 0.0.0.0:10000 app.wsgi:application
+    autoDeploy: true
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: PYTHON_VERSION
+        value: "3.11"
+
+  # Celery Worker Service
+  - type: background
+    name: hiresense-celery-worker
+    env: python
+    plan: free
+    buildCommand: >
+      cd BackEnd/app &&
+      pip install -r requirements.txt
+    startCommand: >
+      cd BackEnd/app &&
+      celery -A app worker -l info --concurrency=2
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+
+  # Celery Beat Service (Scheduler)
+  - type: background
+    name: hiresense-celery-beat
+    env: python
+    plan: free
+    buildCommand: >
+      cd BackEnd/app &&
+      pip install -r requirements.txt
+    startCommand: >
+      cd BackEnd/app &&
+      celery -A app beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+
+  # Redis Database
+  - type: redis
+    name: hiresense-redis
+    plan: free
+    region: oregon  # Change to your preferred region
+    ipAllowList: []  # Allows all IPs

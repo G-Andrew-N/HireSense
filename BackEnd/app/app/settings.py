@@ -190,12 +190,6 @@ else:
         }
     }
 
-# Celery
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
-CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
-CELERY_ACCEPT_CONTENT = ["json"]
-CELERY_TASK_SERIALIZER = "json"
-
 # REST Framework & JWT
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
@@ -275,5 +269,47 @@ LOGGING = {
             "level": "ERROR",
             "propagate": False,
         },
+    },
+}
+
+# ============================================================================
+# CELERY CONFIGURATION
+# ============================================================================
+from celery.schedules import crontab
+
+CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://default:AS_-AAIncDI2MTEwZGU5YTMyMDE0OTkyYjE0YzkzZmZiMjc2ZjNiMnAyMTIyODY@relaxed-bison-12286.upstash.io:6379/0')
+CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', 'redis://default:AS_-AAIncDI2MTEwZGU5YTMyMDE0OTkyYjE0YzkzZmZiMjc2ZjNiMnAyMTIyODY@relaxed-bison-12286.upstash.io:6379/0')
+
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TIMEZONE = 'UTC'
+CELERY_ENABLE_UTC = True
+
+CELERY_RESULT_EXPIRES = 3600
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60
+CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60
+
+CELERY_BEAT_SCHEDULE = {
+    'scan-all-job-sites-every-hour': {
+        'task': 'core.tasks.scan_all_job_sites',
+        'schedule': crontab(minute=0),
+    },
+    'analyze-new-jobs-every-30-minutes': {
+        'task': 'core.tasks.analyze_new_jobs_for_all_users',
+        'schedule': crontab(minute='*/30'),
+    },
+    'run-match-analysis-daily': {
+        'task': 'core.tasks.run_match_analysis_for_all_users',
+        'schedule': crontab(hour=2, minute=0),
+    },
+    'send-daily-notifications': {
+        'task': 'core.tasks.send_daily_match_notifications',
+        'schedule': crontab(hour=8, minute=0),
+    },
+    'send-weekly-reports': {
+        'task': 'core.tasks.send_weekly_reports',
+        'schedule': crontab(day_of_week=1, hour=9, minute=0),
     },
 }
