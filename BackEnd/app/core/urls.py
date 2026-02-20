@@ -9,6 +9,8 @@ router.register(r"resumes", views.ResumeViewSet, basename="resume")
 router.register(r"job-sites", views.JobSiteViewSet, basename="jobsite")
 router.register(r"job-matches", views.JobMatchViewSet, basename="jobmatch")
 router.register(r"insights", views.ResumeInsightViewSet, basename="insight")
+router.register(r"admin/notifications", views.SystemNotificationViewSet, basename="system-notification")
+router.register(r"notifications", views.UserNotificationViewSet, basename="user-notification")
 
 urlpatterns = [
     # AI endpoints (must precede router so /resumes/parse/ is not captured as pk)

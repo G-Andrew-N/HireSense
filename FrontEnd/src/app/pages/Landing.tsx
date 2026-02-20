@@ -146,14 +146,14 @@ export function Landing() {
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 1.0 }}
-              className="mt-20 max-w-4xl mx-auto"
+              className="mt-20 max-w-4xl mx-auto px-0"
             >
-              <div className="bg-gray-900 border border-gray-800 p-8 sm:p-10 rounded-lg">
-                <h2 className="text-2xl sm:text-3xl font-bold text-white mb-6">Best Results For</h2>
-                <p className="text-gray-400 mb-6">
+              <div className="bg-gray-900 border border-gray-800 p-6 sm:p-8 lg:p-10">
+                <h2 className="text-2xl sm:text-3xl font-bold text-white mb-4 sm:mb-6">Best Results For</h2>
+                <p className="text-gray-400 mb-6 text-sm sm:text-base">
                   HireSense uses AI-powered profession detection from your resume to find the most relevant remote job opportunities. The system works exceptionally well for:
                 </p>
-                <div className="grid sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-6 mb-6">
                   <div className="text-left">
                     <h3 className="font-semibold text-emerald-400 mb-2">Tech Professionals</h3>
                     <p className="text-gray-400 text-sm">Software Engineers, Full-Stack Developers, Data Engineers, ML Engineers, DevOps Engineers</p>
@@ -166,12 +166,8 @@ export function Landing() {
                     <h3 className="font-semibold text-emerald-400 mb-2">Business & Strategy</h3>
                     <p className="text-gray-400 text-sm">Product Managers, Marketing Professionals, Business Analysts, Growth Specialists</p>
                   </div>
-                  <div className="text-left">
-                    <h3 className="font-semibold text-emerald-400 mb-2">Other Professions</h3>
-                    <p className="text-gray-400 text-sm">Sales Professionals, Healthcare Workers, Content Reviewers, and more</p>
-                  </div>
                 </div>
-                <p className="text-gray-400 mt-6 text-sm">
+                <p className="text-gray-400 text-sm">
                   The AI analyzes your resume to match you with relevant opportunities across 12 remote job sources. Jobs with a match score of 25 or higher are displayed as potential opportunities.
                 </p>
               </div>

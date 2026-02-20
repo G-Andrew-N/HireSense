@@ -174,6 +174,7 @@ export interface User {
   email: string;
   first_name: string;
   last_name: string;
+  is_superuser: boolean;
   /** Profile photo URL (absolute). */
   avatar: string | null;
   /** Get daily summaries of new matches via email. */

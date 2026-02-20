@@ -7,7 +7,8 @@ import {
   Lightbulb, 
   Settings,
   Target,
-  LogOut
+  LogOut,
+  Shield
 } from "lucide-react";
 import { cn } from "./ui/utils";
 import { Button } from "./ui/button";
@@ -87,6 +88,20 @@ export function Sidebar() {
             <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user?.email ?? ""}</p>
           </div>
         </div>
+        {user?.is_superuser && (
+          <motion.div
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <Link
+              to="/admin"
+              className="flex items-center gap-2 w-full px-3 py-2 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/50 rounded-lg font-medium transition-all duration-200"
+            >
+              <Shield className="w-4 h-4" />
+              Admin Dashboard
+            </Link>
+          </motion.div>
+        )}
         <motion.div
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}

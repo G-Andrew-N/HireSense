@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from .models import JobMatch, JobSite, Resume, ResumeInsight, UserProfile
+from .models import JobMatch, JobSite, Resume, ResumeInsight, UserProfile, SystemNotification, UserNotification
 
 User = get_user_model()
 
@@ -46,8 +46,8 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ("id", "email", "first_name", "last_name", "avatar", "email_notifications", "high_match_alerts", "weekly_reports")
-        read_only_fields = ("id", "email")
+        fields = ("id", "email", "first_name", "last_name", "avatar", "is_superuser", "email_notifications", "high_match_alerts", "weekly_reports")
+        read_only_fields = ("id", "email", "is_superuser")
 
     def get_avatar(self, obj):
         request = self.context.get("request")
@@ -238,3 +238,60 @@ class JobMatchAnalysisSerializer(serializers.Serializer):
 
     resume_text = serializers.CharField(required=True, allow_blank=False)
     job_description = serializers.CharField(required=True, allow_blank=False)
+
+# ----- System Notifications (Admin) -----
+
+
+class SystemNotificationSerializer(serializers.ModelSerializer):
+    created_by_email = serializers.CharField(source='created_by.email', read_only=True)
+
+    class Meta:
+        model = SystemNotification
+        fields = (
+            "id",
+            "title",
+            "message",
+            "notification_type",
+            "created_by",
+            "created_by_email",
+            "is_sent",
+            "send_immediately",
+            "scheduled_for",
+            "sent_at",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("created_by", "is_sent", "sent_at")
+
+    def create(self, validated_data):
+        validated_data["created_by"] = self.context["request"].user
+        return super().create(validated_data)
+
+
+class UserNotificationSerializer(serializers.ModelSerializer):
+    """
+    Serializer for user-specific notification receipts.
+    Shows notifications that have been sent to the user.
+    """
+
+    notification_title = serializers.CharField(source="notification.title", read_only=True)
+    notification_message = serializers.CharField(source="notification.message", read_only=True)
+    notification_type = serializers.CharField(source="notification.notification_type", read_only=True)
+    sent_by_email = serializers.CharField(source="notification.created_by.email", read_only=True)
+    notification_sent_at = serializers.DateTimeField(source="notification.sent_at", read_only=True)
+
+    class Meta:
+        model = UserNotification
+        fields = (
+            "id",
+            "notification",
+            "notification_title",
+            "notification_message",
+            "notification_type",
+            "sent_by_email",
+            "is_read",
+            "read_at",
+            "notification_sent_at",
+            "created_at",
+        )
+        read_only_fields = ("notification", "created_at", "notification_sent_at")

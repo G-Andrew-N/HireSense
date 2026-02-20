@@ -5,6 +5,7 @@ import { JobMatches } from "./pages/JobMatches";
 import { Insights } from "./pages/Insights";
 import { Settings } from "./pages/Settings";
 import { Notifications } from "./pages/Notifications";
+import { AdminDashboard } from "./pages/AdminDashboard";
 import { Root } from "./pages/Root";
 import { Landing } from "./pages/Landing";
 import { Login } from "./pages/Login";
@@ -54,5 +55,9 @@ export const router = createBrowserRouter([
       { path: "settings", Component: Settings },
       { path: "notifications", Component: Notifications },
     ],
+  },
+  {
+    path: "/admin",
+    Component: AdminDashboard,
   },
 ]);

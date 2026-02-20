@@ -5,6 +5,7 @@ from django.core.mail import send_mail
 from django.db.models import Q
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.exceptions import APIException
 
@@ -22,7 +23,7 @@ from rest_framework.mixins import UpdateModelMixin
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import JobMatch, JobPosting, JobSite, Resume, ResumeInsight, UserProfile
+from .models import JobMatch, JobPosting, JobSite, Resume, ResumeInsight, UserProfile, SystemNotification, UserNotification
 from .resume_pipeline import process_resume_text, run_pipeline_and_save
 from .resume_utils import extract_text_from_file, validate_resume_file
 from .throttles import AIEndpointThrottle, AIInsightsThrottle, AIMatchThrottle, AuthRateThrottle, ScanThrottle
@@ -38,6 +39,8 @@ from .serializers import (
     ResumeParseSerializer,
     ResumeSerializer,
     UserSerializer,
+    SystemNotificationSerializer,
+    UserNotificationSerializer,
 )
 
 User = get_user_model()
@@ -506,11 +509,20 @@ class ResumeViewSet(ModelViewSet):
         # Enqueue match analysis and insights generation asynchronously; return quickly
         self.match_analysis = {"started": False}
         try:
-            from .tasks import run_match_analysis_for_user, generate_insights_for_user
+            from .tasks import run_match_analysis_for_user, generate_insights_for_user, _run_scan_all_limited
         except Exception as e:
             RESUME_LOG.warning("Could not import match analysis/insights tasks: %s", e)
             self.match_analysis = {"started": False, "reason": "import_failed", "error": str(e)}
             return
+
+        # Fetch fresh jobs from all sources BEFORE running match analysis
+        # This ensures there are jobs to analyze when the user first views their matches
+        try:
+            scan_result = _run_scan_all_limited(max_results_per_source=3, max_total=30)
+            RESUME_LOG.info("Fresh job scan completed after resume upload: %s", scan_result)
+        except Exception as e:
+            RESUME_LOG.warning("Failed to fetch fresh jobs after resume upload: %s", e)
+            # Continue with match analysis even if scan fails
 
         try:
             task = run_match_analysis_for_user.delay(instance.user_id)
@@ -873,4 +885,162 @@ class JobSourcesView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+# ----- Admin Permissions -----
+
+
+class IsSuperUser(object):
+    """Custom permission to check if user is a superuser."""
+    
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated and request.user.is_superuser)
+
+
+# ----- System Notifications (Admin) -----
+
+
+class SystemNotificationViewSet(ModelViewSet):
+    """
+    Admin-only viewset for managing system notifications.
+    Only superusers can perform any action.
+    """
+    
+    queryset = SystemNotification.objects.all()
+    serializer_class = SystemNotificationSerializer
+    permission_classes = [IsAuthenticated, IsSuperUser]
+    
+    def get_queryset(self):
+        """Return all notifications (superusers only)."""
+        return SystemNotification.objects.all().order_by('-created_at')
+    
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated, IsSuperUser])
+    def send_notification(self, request):
+        """Send a pending notification immediately."""
+        notification_id = request.data.get('notification_id')
+        if not notification_id:
+            return Response(
+                {'detail': 'notification_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            notification = SystemNotification.objects.get(id=notification_id)
+        except SystemNotification.DoesNotExist:
+            return Response(
+                {'detail': 'Notification not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        if notification.is_sent:
+            return Response(
+                {'detail': 'Notification already sent'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Send notification to all users
+        from .tasks import send_notification_to_users
+        task = send_notification_to_users.delay(notification.id)
+        
+        return Response(
+            {
+                'detail': 'Notification sent successfully',
+                'task_id': task.id,
+                'notification_id': notification.id
+            },
+            status=status.HTTP_200_OK
+        )
+    
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated, IsSuperUser])
+    def admin_stats(self, request):
+        """Get admin dashboard statistics."""
+        from django.db.models import Count
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        # Calculate stats
+        total_users = User.objects.count()
+        active_users = User.objects.filter(last_login__gte=timezone.now() - timedelta(days=7)).count()
+        
+        total_resumes = Resume.objects.count()
+        total_matches = JobMatch.objects.count()
+        total_jobs = JobPosting.objects.count()
+        
+        recent_notifications = SystemNotification.objects.filter(is_sent=True).count()
+        pending_notifications = SystemNotification.objects.filter(is_sent=False).count()
+        
+        # User growth (last 30 days)
+        thirty_days_ago = timezone.now() - timedelta(days=30)
+        new_users_30d = User.objects.filter(date_joined__gte=thirty_days_ago).count()
+        
+        return Response({
+            'users': {
+                'total': total_users,
+                'active_7d': active_users,
+                'new_30d': new_users_30d,
+            },
+            'resumes': {
+                'total': total_resumes,
+            },
+            'jobs': {
+                'total_postings': total_jobs,
+                'total_matches': total_matches,
+            },
+            'notifications': {
+                'sent': recent_notifications,
+                'pending': pending_notifications,
+            },
+            'status': 'operational'
+        })
+
+
+class UserNotificationViewSet(ReadOnlyModelViewSet):
+    """
+    ViewSet for users to view and manage their notifications.
+    Provides list and retrieve endpoints for notifications sent by admins.
+    Allows users to mark notifications as read.
+    """
+    serializer_class = UserNotificationSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        """Only return notifications for the current user."""
+        return UserNotification.objects.filter(user=self.request.user).select_related(
+            'notification', 'notification__created_by'
+        )
+
+    @action(detail=True, methods=['post'])
+    def mark_as_read(self, request, pk=None):
+        """Mark a specific notification as read."""
+        user_notification = self.get_object()
+        
+        if not user_notification.is_read:
+            user_notification.is_read = True
+            user_notification.read_at = timezone.now()
+            user_notification.save()
+        
+        serializer = self.get_serializer(user_notification)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['post'])
+    def mark_all_as_read(self, request):
+        """Mark all unread notifications as read."""
+        from django.utils import timezone
+        
+        unread = self.get_queryset().filter(is_read=False)
+        count = unread.count()
+        
+        unread.update(is_read=True, read_at=timezone.now())
+        
+        return Response(
+            {'message': f'{count} notifications marked as read'},
+            status=status.HTTP_200_OK
+        )
+
+    @action(detail=False, methods=['get'])
+    def unread_count(self, request):
+        """Get count of unread notifications."""
+        unread_count = self.get_queryset().filter(is_read=False).count()
+        return Response({'unread_count': unread_count}, status=status.HTTP_200_OK)
+
 

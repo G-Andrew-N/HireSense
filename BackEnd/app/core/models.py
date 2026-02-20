@@ -287,3 +287,103 @@ class ResumeInsight(models.Model):
 
     def __str__(self):
         return f"{self.get_category_display()}: {self.title}"
+
+class SystemNotification(models.Model):
+    """
+    System-wide notification for all users managed by superusers.
+    Used for maintenance announcements, important updates, etc.
+    """
+
+    class NotificationType(models.TextChoices):
+        MAINTENANCE = "maintenance", "Maintenance"
+        IMPORTANT = "important", "Important Update"
+        INFO = "info", "Information"
+        ALERT = "alert", "Alert"
+        WARNING = "warning", "Warning"
+
+    title = models.CharField(max_length=255)
+    message = models.TextField()
+    notification_type = models.CharField(
+        max_length=20,
+        choices=NotificationType.choices,
+        default=NotificationType.INFO,
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="created_notifications",
+        help_text="Superuser who created this notification.",
+    )
+    is_sent = models.BooleanField(
+        default=False,
+        help_text="Whether the notification has been sent to users.",
+    )
+    send_immediately = models.BooleanField(
+        default=True,
+        help_text="If False, notification is drafted and can be scheduled for later.",
+    )
+    scheduled_for = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the notification should be sent.",
+    )
+    sent_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the notification was actually sent.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "core_system_notification"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["-created_at"]),
+            models.Index(fields=["is_sent", "send_immediately"]),
+        ]
+
+    def __str__(self):
+        return f"{self.get_notification_type_display()}: {self.title}"
+
+
+class UserNotification(models.Model):
+    """
+    Tracks which users have received system notifications and their read status.
+    Created when a SystemNotification is sent to all users.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="received_notifications",
+        help_text="The user who received this notification.",
+    )
+    notification = models.ForeignKey(
+        SystemNotification,
+        on_delete=models.CASCADE,
+        related_name="user_receipts",
+        help_text="The system notification that was sent.",
+    )
+    is_read = models.BooleanField(
+        default=False,
+        help_text="Whether the user has read this notification.",
+    )
+    read_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the user read this notification.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "core_user_notification"
+        ordering = ["-created_at"]
+        unique_together = ["user", "notification"]
+        indexes = [
+            models.Index(fields=["user", "-created_at"]),
+            models.Index(fields=["is_read", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user.email}: {self.notification.title} ({'read' if self.is_read else 'unread'})"

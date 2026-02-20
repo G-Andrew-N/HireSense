@@ -59,16 +59,6 @@ export function Resume() {
       try {
         localStorage.setItem("hiresense:insights-pending", "1");
       } catch {}
-      try {
-        showBanner(
-          "HireSense searches only jobs available via supported public sources (e.g., Remotive, WeWorkRemotely). It cannot search private or enterprise-only listings."
-        );
-      } catch {
-        toast.info(
-          "Note: HireSense searches only jobs available via supported public sources (e.g., Remotive, WeWorkRemotely).",
-          { duration: 8000 }
-        );
-      }
       // If backend started async match analysis, set scanning so JobMatches polls
       if (resp.match_analysis?.started) {
         if (resp.match_analysis.async) {

@@ -40,17 +40,6 @@ export function Signup() {
         avatarFile ?? undefined
       );
       setUser(res.user);
-      // show persistent site-wide banner about coverage
-      try {
-        showBanner(
-          "HireSense searches only jobs available via supported public sources (e.g., Remotive, WeWorkRemotely). It cannot search private or enterprise-only listings."
-        );
-      } catch {
-        toast.info(
-          "Note: HireSense searches only jobs available via supported public sources (e.g., Remotive, WeWorkRemotely).",
-          { duration: 8000 }
-        );
-      }
       navigate("/dashboard");
     } catch (err: unknown) {
       const msg = (err as { body?: { email?: string[]; detail?: string } })?.body?.email?.[0]
