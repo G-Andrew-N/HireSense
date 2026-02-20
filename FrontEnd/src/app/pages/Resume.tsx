@@ -57,6 +57,9 @@ export function Resume() {
       setUploadProgress(100);
       toast.success("Resume uploaded successfully");
       try {
+        localStorage.setItem("hiresense:insights-pending", "1");
+      } catch {}
+      try {
         showBanner(
           "HireSense searches only jobs available via supported public sources (e.g., Remotive, WeWorkRemotely). It cannot search private or enterprise-only listings."
         );

@@ -306,27 +306,40 @@ export async function setResumePrimary(id: number): Promise<Resume> {
 
 // Job matches
 export interface JobMatch {
-  id: number;
+  id: number | null;  // null for pending jobs (not yet analyzed)
   title: string;
   company: string;
   location: string;
-  match_score: number;
-  interview_probability: number;
+  match_score?: number | null;
+  interview_probability?: number | null;
   salary: string;
   posted_date: string | null;
   source: string;
   logo?: string;
   external_url: string;
-  skills: string[];
-  missing_skills: string[];
+  skills?: string[];
+  missing_skills?: string[];
   created_at: string;
   /** When the user marked this job as applied (ISO date string). */
-  applied_at: string | null;
+  applied_at?: string | null;
+  /** 'analyzing' for pending jobs, undefined for completed matches */
+  status?: 'analyzing';
+}
+
+export interface JobMatchesResponse {
+  results: JobMatch[];
+  count: number;
+  pending_count: number;
+  matched_count: number;
 }
 
 export async function getJobMatches(): Promise<JobMatch[]> {
   const data = await apiRequest<JobMatch[]>('/job-matches/');
   return Array.isArray(data) ? data : [];
+}
+
+export async function getJobMatchesWithPending(): Promise<JobMatchesResponse> {
+  return apiRequest<JobMatchesResponse>('/job-matches/with_pending/');
 }
 
 /** Mark a job match as applied or unmark. Applications = count of matches with applied_at set. */

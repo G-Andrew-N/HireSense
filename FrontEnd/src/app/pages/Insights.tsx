@@ -16,7 +16,6 @@ import {
   Loader2,
 } from "lucide-react";
 import { getInsights, generateInsights, markInsightCompleted, type ResumeInsight } from "../../lib/api";
-import { useScan } from "../../lib/scan-context";
 import { motion, AnimatePresence } from "motion/react";
 
 export function Insights() {
@@ -24,7 +23,6 @@ export function Insights() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
-  const prevScanningRef = useRef<boolean>(false);
 
   const loadInsights = () => {
     setLoading(true);
@@ -38,17 +36,15 @@ export function Insights() {
     loadInsights();
   }, []);
 
-  const { isScanning } = useScan();
-
   useEffect(() => {
-    // Only notify when scanning transitions from false -> true (avoid repeating on mount)
-    if (isScanning && !prevScanningRef.current) {
-      setInsights([]);
-      setLoading(true);
-      toast.info("Regenerating insights for the new resume...");
-    }
-    prevScanningRef.current = isScanning;
-  }, [isScanning]);
+    try {
+      const pending = localStorage.getItem("hiresense:insights-pending");
+      if (pending) {
+        localStorage.removeItem("hiresense:insights-pending");
+        toast.info("Regenerating insights for the new resume...");
+      }
+    } catch {}
+  }, []);
 
   const handleGenerate = () => {
     setGenerating(true);

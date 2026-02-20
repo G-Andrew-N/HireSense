@@ -14,9 +14,60 @@ User = get_user_model()
 logger = logging.getLogger(__name__)
 
 
+def _is_remote_job(raw_job) -> bool:
+    """Return True when the job posting is clearly remote."""
+    if not raw_job:
+        return False
+    title = (raw_job.title or "").lower()
+    location = (raw_job.location or "").lower()
+    description = (raw_job.description or "").lower()
+    source = (raw_job.source or "").lower()
+
+    text = " ".join([title, location, description])
+
+    positive = (
+        "remote",
+        "work from home",
+        "work-from-home",
+        "wfh",
+        "telecommute",
+        "distributed",
+        "anywhere",
+        "home-based",
+    )
+    negative = (
+        "on-site",
+        "onsite",
+        "in office",
+        "in-office",
+        "office-based",
+        "hybrid",
+    )
+
+    has_positive = any(k in text for k in positive)
+    has_negative = any(k in text for k in negative)
+
+    if has_negative and not has_positive:
+        return False
+    if has_positive:
+        return True
+
+    remote_sources = (
+        "remote",
+        "remotive",
+        "we work remotely",
+        "remote.ok",
+        "justremote",
+    )
+    return any(k in source for k in remote_sources)
+
+
 def _upsert_job_posting(raw_job) -> JobPosting | None:
     """Create or update JobPosting; return instance or None on duplicate."""
     try:
+        if not _is_remote_job(raw_job):
+            return None
+        logger.info(f"_upsert_job_posting: raw_job={raw_job}, source={raw_job.source}, external_url={raw_job.external_url}")
         obj, created = JobPosting.objects.update_or_create(
             source=raw_job.source,
             external_url=raw_job.external_url,
@@ -29,8 +80,10 @@ def _upsert_job_posting(raw_job) -> JobPosting | None:
                 "posted_date": raw_job.posted_date,
                 "logo": raw_job.logo or "",
                 "raw_data": raw_job.raw_data or {},
+                "fetched_at": timezone.now(),  # Always update fetched timestamp
             },
         )
+        logger.info(f"_upsert_job_posting: created={created}, obj={obj.id if obj else None}")
         return obj
     except Exception as e:
         logger.exception("Failed to upsert job posting: %s", e)
@@ -114,14 +167,83 @@ def scan_all_job_sites(self) -> dict:
     return _run_scan_all()
 
 
-# Jobs fetched for the user's profession (AI-derived); only these are used for matching
-SOURCE_RESUME_BASED = "Indeed (Resume)"
-SOURCE_WWR_RESUME = "We Work Remotely (Resume)"
-ACCEPTED_RESUME_SOURCES = (SOURCE_RESUME_BASED, SOURCE_WWR_RESUME)
+@shared_task(bind=True, name="core.tasks.scan_all_job_sites_limited")
+def scan_all_job_sites_limited(self) -> dict:
+    """Fetch jobs for all enabled JobSites with per-source limits and early stopping."""
+    return _run_scan_all_limited(max_results_per_source=3, max_total=30)
+
+
 # Skip re-fetch when we already have recent profession-based jobs (e.g. in chunk loop)
 RESUME_FETCH_FRESH_MINUTES = 5
 
 WWR_PROGRAMMING_RSS = "https://weworkremotely.com/categories/remote-programming-jobs.rss"
+
+
+def _get_enabled_job_source_names() -> tuple:
+    """Get all enabled job source names from the database."""
+    sources = JobSite.objects.filter(enabled=True).values_list("name", flat=True)
+    return tuple(sources)
+
+
+def _run_scan_site_limited(site_id: int, max_results: int = 3) -> dict:
+    """Synchronous scan for a single site with result limit."""
+    try:
+        site = JobSite.objects.get(pk=site_id)
+    except JobSite.DoesNotExist:
+        return {"error": "Site not found", "site_id": site_id}
+    if not site.enabled:
+        return {"site_id": site_id, "skipped": True, "reason": "disabled"}
+    result = fetch_jobs_for_site(site)
+    if result.error:
+        return {"site_id": site_id, "error": result.error, "fetched": 0}
+    stored = 0
+    # Apply result limit per source
+    limited_jobs = result.jobs[:max_results]
+    for raw in limited_jobs:
+        obj = _upsert_job_posting(raw)
+        if obj is not None:
+            stored += 1
+    return {"site_id": site_id, "fetched": result.fetched_count, "stored": stored, "source": site.name}
+
+
+def _run_scan_all_limited(max_results_per_source: int = 3, max_total: int = 30) -> dict:
+    """Scan only reliable job sites with per-source limits and early stopping."""
+    from .builtin_job_sites import ensure_builtin_job_sites
+    ensure_builtin_job_sites()
+    
+    # Whitelist of sources we know work
+    RELIABLE_SOURCES = {
+        "Remotive",
+        "We Work Remotely",
+        "We Work Remotely - Design", 
+        "We Work Remotely - Marketing",
+        "We Work Remotely - Sales",
+        # Add others as their APIs improve
+    }
+    
+    sites = JobSite.objects.filter(enabled=True, name__in=RELIABLE_SOURCES)
+    total_fetched = 0
+    total_stored = 0
+    errors = []
+    for site in sites:
+        r = _run_scan_site_limited(site.id, max_results=max_results_per_source)
+        if r.get("error"):
+            errors.append({"site": site.name, "error": r["error"]})
+        else:
+            total_fetched += r.get("fetched", 0)
+            total_stored += r.get("stored", 0)
+        
+        # Early stop if we have enough total results
+        if total_stored >= max_total:
+            logger.info("Reached max_total=%d jobs, stopping scan early", max_total)
+            break
+    
+    return {
+        "sites_scanned": sites.count(),
+        "total_fetched": total_fetched,
+        "total_stored": total_stored,
+        "errors": errors,
+    }
 
 
 def _is_developer_profession(profession: str) -> bool:
@@ -144,7 +266,7 @@ def _fetch_wwr_programming_jobs() -> int:
     fetcher = get_fetcher(
         source_type="rss",
         url=WWR_PROGRAMMING_RSS,
-        source_name=SOURCE_WWR_RESUME,
+        source_name="We Work Remotely",
         config={},
     )
     result = fetcher.fetch()
@@ -167,10 +289,10 @@ def _get_current_resume(user):
     return Resume.objects.filter(user=user).order_by("-uploaded_at").first()
 
 
-def _fetch_indeed_jobs_for_user(user_id: int, query_override: str | None = None) -> dict:
+def _fetch_indeed_jobs_for_user(user_id: int, query_override: str | None = None, auto_trigger_analysis: bool = True) -> dict:
     """
-    Fetch Indeed jobs using a single search query. If query_override is set (e.g. AI-derived
-    profession), use it; otherwise derive from resume. Every job stored comes from this fetch.
+    Fetch jobs with profession-aware query using curated sources.
+    Complements the bulk scan with targeted fetching based on resume profession.
     """
     try:
         user = User.objects.get(pk=user_id)
@@ -182,70 +304,99 @@ def _fetch_indeed_jobs_for_user(user_id: int, query_override: str | None = None)
 
     from .job_sources.registry import get_fetcher
     from .resume_utils import get_job_search_query
-    try:
-        from ai.profession import get_profession_and_industry
-    except Exception:
-        # fallback to old behavior
-        profession = query_override or (get_job_search_query(resume) if resume else "") or "jobs"
-        industry = "general"
-    else:
-        profession, industry = get_profession_and_industry(resume.raw_text if resume else (query_override or ""))
-
-    query = (query_override or profession or (get_job_search_query(resume) if resume else "") or "jobs").strip() or "jobs"
-
-    # Build list of candidate fetchers based on industry
-    candidates = []
-    location_filter = "Remote" if industry in ("software", "tech", "developer") else ""
     
-    # Primary: Remotive API (free, no auth required) for remote positions
+    profession = None
+    industry = "general"
+    
+    # AI-powered profession detection
+    if not query_override:
+        try:
+            from ai.profession import get_profession_and_industry
+            profession, industry = get_profession_and_industry(resume.raw_text if resume else "")
+            logger.info("AI profession detection for user %s: profession='%s', industry='%s'", user_id, profession, industry)
+        except Exception as e:
+            logger.warning("AI profession detection failed for user %s: %s, falling back to resume parsing", user_id, e)
+            try:
+                profession = get_job_search_query(resume) if resume else None
+                logger.info("Resume parsing fallback for user %s: profession='%s'", user_id, profession)
+            except Exception as e2:
+                logger.warning("Resume parsing also failed for user %s: %s", user_id, e2)
+                profession = None
+    
+    # Final query construction with multiple fallbacks
+    query = (query_override or profession or "jobs").strip()
+    if not query or query == "jobs":
+        logger.warning("No specific profession detected for user %s, using generic 'jobs' query", user_id)
+    else:
+        logger.info("Using search query '%s' for user %s (industry=%s)", query, user_id, industry)
+
+    # Build list of profession-aware sources (Remotive + specialized for tech)
+    candidates = []
+    
+    # Always try Remotive first with profession query (fastest, free, no rate limit issues)
     candidates.append({
         "source_type": "remotive",
         "source_name": "Remotive",
-        "config": {"keywords": query}
+        "config": {"keywords": query},
+        "max_results": 5
     })
-
-    # Industry-specific fallbacks
-    if industry in ("software", "tech", "developer"):
-        # We Work Remotely is useful for remote dev roles
-        candidates.append({"source_type": "rss", "source_name": SOURCE_WWR_RESUME, "url": WWR_PROGRAMMING_RSS, "config": {}})
-    elif industry in ("real_estate", "realestate", "real-estate"):
-        # For real estate, try Remotive with broader keywords
+    
+    # Only add tech job sources for recognized tech/dev professions
+    tech_industries = {"software", "tech", "developer", "engineering"}
+    if industry and industry.lower() in tech_industries:
+        logger.info("Adding We Work Remotely (programming) for user %s due to tech industry: %s", user_id, industry)
         candidates.append({
-            "source_type": "remotive",
-            "source_name": "Remotive (Real Estate)",
-            "config": {"keywords": f"{query} real estate"}
+            "source_type": "rss",
+            "source_name": "We Work Remotely",
+            "url": WWR_PROGRAMMING_RSS,
+            "config": {},
+            "max_results": 5
         })
-    elif industry in ("healthcare", "nursing", "medical"):
-        # For healthcare, try Remotive
-        candidates.append({
-            "source_type": "remotive",
-            "source_name": "Remotive (Healthcare)",
-            "config": {"keywords": f"{query} healthcare"}
-        })
-    else:
-        # Generic fallback
-        candidates.append({
-            "source_type": "remotive",
-            "source_name": "Remotive (Alternate)",
-            "config": {"keywords": query}
-        })
-
+    elif query and query.lower() != "jobs":
+        logger.info("Not adding tech-only sources for user %s (industry='%s', query='%s')", user_id, industry or "unknown", query)
+    
     total_stored = 0
+    MIN_RESULTS_TO_STOP = 5  # Stop once we have decent results
+    
     for c in candidates:
         try:
             url = c.get("url", "")
             cfg = c.get("config", {})
-            fetcher = get_fetcher(c["source_type"], url, c.get("source_name", "Jobs"), cfg)
+            source_name = c.get("source_name", "Jobs")
+            max_results = c.get("max_results", 5)
+            logger.info("Fetching from %s for user %s with config: %s (max: %d results)", source_name, user_id, cfg, max_results)
+            
+            fetcher = get_fetcher(c["source_type"], url, source_name, cfg)
             result = fetcher.fetch()
             if result.error:
-                logger.info("Fetch candidate %s returned error: %s", c.get("source_name"), result.error)
+                logger.info("Fetch from %s returned error for user %s: %s", source_name, user_id, result.error)
                 continue
-            stored = sum(1 for raw in result.jobs if _upsert_job_posting(raw) is not None)
+            
+            logger.info("Fetch from %s returned %d jobs for user %s", source_name, result.fetched_count, user_id)
+            
+            # Limit results per source
+            limited_jobs = result.jobs[:max_results]
+            stored = sum(1 for raw in limited_jobs if _upsert_job_posting(raw) is not None)
             total_stored += stored
             if stored:
-                logger.info("Fetched %d jobs from %s for user %s (q=%s)", stored, c.get("source_name"), user_id, query)
+                logger.info("Stored %d profession-aware jobs from %s for user %s (limited from %d, q=%s)", 
+                           stored, source_name, user_id, result.fetched_count, query)
+            
+            # Early termination: if we have enough results, stop searching
+            if total_stored >= MIN_RESULTS_TO_STOP:
+                logger.info("Got %d profession-aware results, stopping search", total_stored)
+                break
         except Exception as e:
-            logger.exception("Candidate fetch failed: %s", e)
+            logger.exception("Candidate fetch failed for user %s: %s", user_id, e)
+            continue
+
+    # Auto-trigger match analysis if we found jobs and auto_trigger is enabled
+    if total_stored > 0 and auto_trigger_analysis:
+        logger.info("Triggering automatic match analysis for user %s after fetching %d profession-aware jobs", user_id, total_stored)
+        try:
+            run_match_analysis_for_user.delay(user_id)
+        except Exception as e:
+            logger.exception("Failed to queue match analysis task for user %s (Redis may be unavailable): %s", user_id, e)
 
     return {"query": query, "stored": total_stored}
 
@@ -266,12 +417,15 @@ def _run_match_analysis_for_user(user_id: int) -> dict:
     # AI reviews document and determines profession; we fetch only for that profession
     resume_text = resume.raw_text
     profession = get_profession_for_job_search(resume_text)
-    fetch_result = _fetch_indeed_jobs_for_user(user_id, query_override=profession)
-    # If Indeed returned no jobs and profession is developer/tech, fall back to We Work Remotely programming
+    # Don't auto-trigger since we're already in a match analysis run
+    fetch_result = _fetch_indeed_jobs_for_user(user_id, query_override=profession, auto_trigger_analysis=False)
+    # Only fallback to WWR if we got zero results and it's a dev role (expensive operation)
     if fetch_result.get("stored", 0) == 0 and _is_developer_profession(profession):
+        logger.info("Primary fetch returned 0 results for developer role, trying fallback")
         _fetch_wwr_programming_jobs()
-    # Only match against jobs from profession-based fetches (Indeed or WWR fallback)
-    recent = JobPosting.objects.filter(source__in=ACCEPTED_RESUME_SOURCES).order_by("-fetched_at")[:15]
+    # Match against jobs from all enabled sources
+    enabled_sources = _get_enabled_job_source_names()
+    recent = JobPosting.objects.filter(source__in=enabled_sources).order_by("-fetched_at")[:10]
 
     from django.conf import settings
 
@@ -297,10 +451,13 @@ def _run_match_analysis_for_user(user_id: int) -> dict:
                 time.sleep(groq_pace_seconds)
             continue
 
-        if groq_between_calls:
-            time.sleep(groq_between_calls)
-        prob_result = estimate_interview_probability(match_result)
-        prob = prob_result["interview_probability"] if prob_result else 0
+        if match_result["match_score"] >= 70:
+            if groq_between_calls:
+                time.sleep(groq_between_calls)
+            prob_result = estimate_interview_probability(match_result)
+            prob = prob_result["interview_probability"] if prob_result else 0
+        else:
+            prob = 0
 
         JobMatch.objects.create(
             user=user,
@@ -344,17 +501,19 @@ def _run_match_analysis_chunk(user_id: int, chunk_size: int = 3) -> dict:
 
     resume_text = resume.raw_text
     # Fetch only when we don't have recent profession-based jobs (avoid re-fetch on every chunk)
+    enabled_sources = _get_enabled_job_source_names()
     has_recent = JobPosting.objects.filter(
-        source__in=ACCEPTED_RESUME_SOURCES,
+        source__in=enabled_sources,
         fetched_at__gte=timezone.now() - timedelta(minutes=RESUME_FETCH_FRESH_MINUTES),
     ).exists()
     if not has_recent:
         profession = get_profession_for_job_search(resume_text)
-        fetch_result = _fetch_indeed_jobs_for_user(user_id, query_override=profession)
+        # Don't auto-trigger since we're already in a chunk analysis run
+        fetch_result = _fetch_indeed_jobs_for_user(user_id, query_override=profession, auto_trigger_analysis=False)
         if fetch_result.get("stored", 0) == 0 and _is_developer_profession(profession):
             _fetch_wwr_programming_jobs()
-    # Only match against jobs from profession-based fetches (Indeed or WWR fallback)
-    recent = JobPosting.objects.filter(source__in=ACCEPTED_RESUME_SOURCES).order_by("-fetched_at")[:50]
+    # Match against jobs from all enabled sources
+    recent = JobPosting.objects.filter(source__in=enabled_sources).order_by("-fetched_at")[:20]
 
     from django.conf import settings
 
@@ -384,10 +543,13 @@ def _run_match_analysis_chunk(user_id: int, chunk_size: int = 3) -> dict:
                 time.sleep(groq_pace_seconds)
             continue
 
-        if groq_between_calls:
-            time.sleep(groq_between_calls)
-        prob_result = estimate_interview_probability(match_result)
-        prob = prob_result["interview_probability"] if prob_result else 0
+        if match_result["match_score"] >= 70:
+            if groq_between_calls:
+                time.sleep(groq_between_calls)
+            prob_result = estimate_interview_probability(match_result)
+            prob = prob_result["interview_probability"] if prob_result else 0
+        else:
+            prob = 0
 
         obj = JobMatch.objects.create(
             user=user,
@@ -421,6 +583,12 @@ def _run_match_analysis_chunk(user_id: int, chunk_size: int = 3) -> dict:
 def run_match_analysis_for_user(self, user_id: int) -> dict:
     """Run match analysis for a single user (async)."""
     return _run_match_analysis_for_user(user_id)
+
+
+@shared_task(bind=True, name="core.tasks._fetch_indeed_jobs_for_user_async")
+def _fetch_indeed_jobs_for_user_async(self, user_id: int) -> dict:
+    """Fetch jobs for a user Profile and auto-trigger analysis (async wrapper)."""
+    return _fetch_indeed_jobs_for_user(user_id, auto_trigger_analysis=True)
 
 
 @shared_task(bind=True, name="core.tasks.run_match_analysis_for_all_users")

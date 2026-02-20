@@ -22,7 +22,7 @@ from rest_framework.mixins import UpdateModelMixin
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import JobMatch, JobSite, Resume, ResumeInsight, UserProfile
+from .models import JobMatch, JobPosting, JobSite, Resume, ResumeInsight, UserProfile
 from .resume_pipeline import process_resume_text, run_pipeline_and_save
 from .resume_utils import extract_text_from_file, validate_resume_file
 from .throttles import AIEndpointThrottle, AIInsightsThrottle, AIMatchThrottle, AuthRateThrottle, ScanThrottle
@@ -339,14 +339,24 @@ class JobScanView(APIView):
     throttle_classes = [ScanThrottle]
 
     def post(self, request):
-        from .tasks import scan_all_job_sites, _run_scan_all
+        from .tasks import scan_all_job_sites_limited, _run_scan_all_limited, _fetch_indeed_jobs_for_user, _fetch_indeed_jobs_for_user_async
 
         if request.query_params.get("sync", "").lower() in ("true", "1", "yes"):
-            result = _run_scan_all()
+            # Sync mode: scan all sources with per-source limits
+            result = _run_scan_all_limited()
+            # Also fetch profession-aware jobs with auto-trigger for analysis
+            user_fetch_result = _fetch_indeed_jobs_for_user(request.user.id, auto_trigger_analysis=True)
+            result["user_fetch"] = user_fetch_result
             return Response({"detail": "Scan completed.", **result})
-        task = scan_all_job_sites.delay()
+        # Async mode: queue both tasks
+        task = scan_all_job_sites_limited.delay()
+        user_task = _fetch_indeed_jobs_for_user_async.delay(request.user.id)
         return Response(
-            {"detail": "Scan started.", "task_id": task.id},
+            {
+                "detail": "Scan started.",
+                "scan_task_id": task.id,
+                "user_fetch_task_id": user_task.id,
+            },
             status=status.HTTP_202_ACCEPTED,
         )
 
@@ -592,12 +602,85 @@ class JobMatchViewSet(ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        from .tasks import ACCEPTED_RESUME_SOURCES
-        # Only show matches from profession-based fetches (Indeed or WWR fallback for devs)
+        from .tasks import _get_enabled_job_source_names
+        # Show matches from all enabled job sources
+        enabled_sources = _get_enabled_job_source_names()
         return (
-            JobMatch.objects.filter(user=self.request.user, source__in=ACCEPTED_RESUME_SOURCES)
+            JobMatch.objects.filter(user=self.request.user, source__in=enabled_sources)
             .order_by("-match_score", "-created_at")
         )
+
+    @action(detail=False, methods=["get"])
+    def with_pending(self, request):
+        """Return both matched jobs and pending jobs (analyzing). Pending jobs have status='analyzing'."""
+        from .tasks import _get_enabled_job_source_names
+        from rest_framework.response import Response
+        import logging
+
+        logger = logging.getLogger(__name__)
+        enabled_sources = _get_enabled_job_source_names()
+        
+        # Get matched jobs
+        matched = JobMatch.objects.filter(
+            user=request.user, source__in=enabled_sources
+        ).order_by("-match_score", "-created_at")
+        
+        # Get recently fetched (last 5 minutes) unmatched postings (pending analysis)
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        recent_cutoff = timezone.now() - timedelta(minutes=5)
+        all_recent = JobPosting.objects.filter(fetched_at__gte=recent_cutoff)
+        logger.info(f"with_pending: enabled_sources={enabled_sources}, all_recent_count={all_recent.count()}")
+        
+        # Log all recent jobs with their sources
+        for jp in all_recent:
+            logger.info(f"  Recent job: id={jp.id}, source={jp.source}, title={jp.title}")
+        
+        pending_postings = JobPosting.objects.filter(
+            source__in=enabled_sources,
+            fetched_at__gte=recent_cutoff
+        ).exclude(
+            matches__user=request.user  # Exclude already matched
+        ).order_by("-fetched_at")
+        
+        logger.info(f"with_pending: pending_postings_count={pending_postings.count()}")
+        
+        # Serialize matched jobs
+        matched_data = JobMatchSerializer(matched, many=True).data
+        
+        # Convert pending postings to a match-like format with status='analyzing'
+        pending_data = []
+        for posting in pending_postings:
+            pending_data.append({
+                "id": None,  # No JobMatch ID yet
+                "user": request.user.id,
+                "job_posting": posting.id,
+                "title": posting.title,
+                "company": posting.company,
+                "location": posting.location,
+                "salary": posting.salary,
+                "posted_date": posting.posted_date,
+                "external_url": posting.external_url,
+                "logo": posting.logo,
+                "source": posting.source,
+                "match_score": None,
+                "interview_probability": None,
+                "skills": [],
+                "missing_skills": [],
+                "status": "analyzing",  # Mark as currently being analyzed
+                "created_at": posting.fetched_at,
+            })
+        
+        # Combine: pending first (so user sees "loading" jobs at top), then matched
+        combined = pending_data + matched_data
+        
+        return Response({
+            "results": combined,
+            "count": len(combined),
+            "pending_count": len(pending_data),
+            "matched_count": len(matched_data),
+        })
 
 
 # ----- Resume insight (read-only + PATCH completed_at) -----

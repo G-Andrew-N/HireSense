@@ -6,6 +6,7 @@ import { Card, CardContent } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { Progress } from "../components/ui/progress";
+import { Tooltip, TooltipTrigger, TooltipContent } from "../components/ui/tooltip";
 import {
   Briefcase,
   MapPin,
@@ -20,7 +21,9 @@ import {
 import { useScan } from "../../lib/scan-context";
 import {
   getJobMatches,
+  getJobMatchesWithPending,
   markJobMatchApplied,
+  triggerJobScan,
   triggerMatchAnalysisChunk,
   type JobMatch,
 } from "../../lib/api";
@@ -28,14 +31,35 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { motion } from "motion/react";
 
 function toDisplay(j: JobMatch) {
+  // Handle pending jobs (analyzing)
+  if (j.status === 'analyzing') {
+    return {
+      id: String(j.id || `pending-${j.external_url}`),
+      rawId: j.id,
+      title: j.title,
+      company: j.company,
+      location: j.location,
+      matchScore: 0,
+      interviewProbability: 0,
+      salary: j.salary,
+      postedDate: j.posted_date ?? "",
+      source: j.source,
+      externalUrl: j.external_url,
+      skills: [],
+      missingSkills: [],
+      appliedAt: j.applied_at ?? null,
+      status: 'analyzing',
+    };
+  }
+  // Handle analyzed jobs
   return {
     id: String(j.id),
     rawId: j.id,
     title: j.title,
     company: j.company,
     location: j.location,
-    matchScore: j.match_score,
-    interviewProbability: j.interview_probability,
+    matchScore: j.match_score ?? 0,
+    interviewProbability: j.interview_probability ?? 0,
     salary: j.salary,
     postedDate: j.posted_date ?? "",
     source: j.source,
@@ -52,59 +76,96 @@ export function JobMatches() {
   const { isScanning, setScanning } = useScan();
   const [matches, setMatches] = useState<JobMatch[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState("high");
   const [markingId, setMarkingId] = useState<number | null>(null);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [scanInFlight, setScanInFlight] = useState(false);
+  const scanStartCountRef = useRef(0);
+  const scanInFlightRef = useRef(false);
   const mountedRef = useRef(true);
 
   const load = useCallback(() => {
     setLoading(true);
-    return getJobMatches()
-      .then((data) => { if (mountedRef.current) setMatches(data); })
-      .catch(() => toast.error("Failed to load matches"))
-      .finally(() => { if (mountedRef.current) setLoading(false); });
+    console.log('[JobMatches] load() called');
+    // Use the new endpoint that shows both matched and pending (analyzing) jobs
+    return getJobMatchesWithPending()
+      .then((response) => { 
+        console.log('[JobMatches] got response:', response);
+        if (mountedRef.current) {
+          const nextPending = response.pending_count ?? 0;
+          const nextCount = response.results.length;
+          setMatches(response.results);
+          setPendingCount(nextPending);
+          console.log('[JobMatches] updated state - matches:', nextCount, 'pending:', response.pending_count);
+          if (scanInFlightRef.current && (nextPending > 0 || nextCount > scanStartCountRef.current)) {
+            scanInFlightRef.current = false;
+            setScanInFlight(false);
+          }
+        }
+      })
+      .catch((err) => {
+        console.error('[JobMatches] getJobMatchesWithPending failed:', err);
+        // Fallback to regular endpoint if new one isn't available
+        getJobMatches()
+          .then((data) => { 
+            if (mountedRef.current) setMatches(data);
+            console.log('[JobMatches] fallback succeeded');
+          })
+          .catch((e) => {
+            console.error('[JobMatches] fallback also failed:', e);
+            toast.error("Failed to load matches");
+          });
+      })
+      .finally(() => { 
+        console.log('[JobMatches] setting loading=false');
+        if (mountedRef.current) setLoading(false); 
+      });
   }, []);
 
   const handleScan = useCallback(async () => {
+    scanStartCountRef.current = matches.length;
+    scanInFlightRef.current = true;
+    setScanInFlight(true);
     setScanning(true);
-    setMatches([]); // Only show this run's opportunities; clear previous list
-    toast.info("Reviewing your resume and finding jobs for your profession…");
+    toast.info("Scanning for new jobs for your profession...");
     try {
-      let totalCreated = 0;
-      let hasMore = true;
-      while (hasMore && mountedRef.current) {
-        const { matches: newMatches, has_more } = await triggerMatchAnalysisChunk(3);
-        if (newMatches.length > 0 && mountedRef.current) {
-          setMatches((prev) => [...prev, ...newMatches]);
-          totalCreated += newMatches.length;
-        }
-        hasMore = has_more;
+      // Trigger fetch of new jobs (backend will auto-trigger analysis)
+      const result = await triggerJobScan(true);
+      if (result.total_stored === 0) {
+        toast.info("No new jobs found for your profession. Try again later.");
+        scanInFlightRef.current = false;
+        setScanInFlight(false);
+        setScanning(false);
+        return;
       }
-      if (totalCreated > 0) {
-        toast.success(`Found ${totalCreated} job match${totalCreated === 1 ? "" : "es"}!`);
-      } else {
-        toast.info("No jobs found for your profession right now. Try again later.");
-      }
+      // Load pending/analyzing jobs immediately
+      await load();
+      // Keep scanning=true to enable polling every 3s for updates
     } catch (err: unknown) {
       const msg = (err as { body?: { detail?: string } })?.body?.detail ?? "Scan failed";
       toast.error(msg);
-    } finally {
+      scanInFlightRef.current = false;
+      setScanInFlight(false);
       setScanning(false);
     }
-  }, [setScanning]);
+  }, [setScanning, load, matches.length]);
 
   useEffect(() => {
     mountedRef.current = true;
     load();
-    // If a resume upload previously set a pending scan flag, start scanning automatically
-    try {
-      const pending = localStorage.getItem("hiresense:scan-pending");
-      if (pending) {
-        localStorage.removeItem("hiresense:scan-pending");
-        if (mountedRef.current) handleScan();
-      }
-    } catch {}
     return () => { mountedRef.current = false; };
   }, [load]);
+
+  // Check for pending scan on mount (separate effect to avoid circular dependency)
+  useEffect(() => {
+    try {
+      const pending = localStorage.getItem("hiresense:scan-pending");
+      if (pending && mountedRef.current) {
+        localStorage.removeItem("hiresense:scan-pending");
+        handleScan();
+      }
+    } catch { }
+  }, [handleScan]);
 
   // Listen for global scan-start events to clear matches immediately
   useEffect(() => {
@@ -122,23 +183,55 @@ export function JobMatches() {
   // When returning to this page while scan is in progress, poll for new matches
   useEffect(() => {
     if (!isScanning) return;
+    // Stop scanning if no pending jobs (all analysis complete)
+    if (!scanInFlight && pendingCount === 0 && matches.length > 0) {
+      setScanning(false);
+      return;
+    }
     const id = setInterval(() => {
       load();
     }, 3000);
     return () => clearInterval(id);
-  }, [isScanning, load]);
+  }, [isScanning, scanInFlight, pendingCount, matches.length, load, setScanning]);
 
   const filteredJobs = matches
     .map(toDisplay)
     .filter((job) => {
+      // Always show pending/analyzing jobs regardless of filter
+      if (job.status === 'analyzing') return true;
+      
       const score = Number(job.matchScore);
       if (Number.isNaN(score)) return true;
       if (filter === "high") return score >= 85;
       if (filter === "medium") return score >= 70 && score < 85;
       if (filter === "low") return score < 70;
       return true;
-    });
+    });  
 
+  const jobsBySource = filteredJobs.reduce<Record<string, typeof filteredJobs>>((acc, job) => {
+    const key = job.source || "Unknown";
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(job);
+    return acc;
+  }, {});
+  const mixedJobs: typeof filteredJobs = [];
+  const sourceKeys = Object.keys(jobsBySource);
+  let remaining = filteredJobs.length;
+  while (remaining > 0) {
+    for (const key of sourceKeys) {
+      const bucket = jobsBySource[key];
+      if (bucket && bucket.length > 0) {
+        mixedJobs.push(bucket.shift()!);
+        remaining -= 1;
+      }
+    }
+  }
+  const displayJobs = mixedJobs;
+  console.log('[JobMatches] filteredJobs computed:', {
+    matchesCount: matches.length,
+    filterValue: filter,
+    filteredCount: filteredJobs.length
+  });
   // When navigated from Dashboard with ?highlight=id, ensure the match is visible (clear filter if needed) then scroll to it
   useEffect(() => {
     if (!highlightId || loading || matches.length === 0) return;
@@ -241,22 +334,59 @@ export function JobMatches() {
             </p>
           </div>
 
-          <Button onClick={handleScan} disabled={isScanning}>
-            {isScanning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <TrendingUp className="w-4 h-4 mr-2" />}
-            Scan for New Jobs
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button onClick={handleScan} disabled={isScanning || pendingCount > 0}>
+                {isScanning ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : pendingCount > 0 ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <TrendingUp className="w-4 h-4 mr-2" />
+                )}
+                {isScanning ? "Scanning..." : pendingCount > 0 ? "Analyzing jobs..." : "Scan for New Jobs"}
+              </Button>
+            </TooltipTrigger>
+            {(isScanning || pendingCount > 0) && (
+              <TooltipContent side="top">
+                {pendingCount > 0 ? `Please wait for ${pendingCount} job${pendingCount !== 1 ? 's' : ''} to finish analyzing before scanning for new jobs` : "Scanning for jobs..."}
+              </TooltipContent>
+            )}
+          </Tooltip>
         </motion.div>
 
-        {(loading || isScanning) ? (
+        {scanInFlight && pendingCount === 0 && (
+          <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-700">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span className="text-sm">Scanning for new jobs...</span>
+          </div>
+        )}
+
+        {(loading && matches.length === 0) ? (
           <div className="py-12 text-center">
             <Loader2 className="w-8 h-8 animate-spin text-emerald-600 mx-auto" />
             <p className="text-sm text-gray-500 mt-2">
-              {isScanning ? "Scanning for jobs..." : "Loading matches..."}
+              Loading matches...
             </p>
           </div>
         ) : (
           <div className="space-y-4">
-            {filteredJobs.map((job, index) => (
+            {filteredJobs.length === 0 ? (
+              <div className="text-center text-gray-500 py-8">
+                {filter === "high" && matches.some(m => {
+                  const toDisp = toDisplay(m);
+                  return toDisp.status !== 'analyzing' && Number(toDisp.matchScore) < 85;
+                }) ? (
+                  <>
+                    <p>No high-quality matches yet.</p>
+                    <p className="text-xs text-gray-400 mt-2">Try browsing Medium or Low match jobs, or scan for more positions.</p>
+                  </>
+                ) : (
+                  <p>No job matches yet. Click "Scan for New Jobs" to get started!</p>
+                )}
+              </div>
+            ) : (
+              displayJobs.map((job, index) => (
               <motion.div
                 key={job.id}
                 id={`match-${job.id}`}
@@ -285,9 +415,16 @@ export function JobMatches() {
                               </div>
                             </div>
                           </div>
-                          <Badge className={`${getMatchColor(job.matchScore)} border flex-shrink-0`}>
-                            {job.matchScore}% Match
-                          </Badge>
+                          {job.status === 'analyzing' ? (
+                            <Badge className="bg-blue-100 text-blue-700 border-blue-200 border flex-shrink-0 animate-pulse">
+                              <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                              Analyzing...
+                            </Badge>
+                          ) : (
+                            <Badge className={`${getMatchColor(job.matchScore)} border flex-shrink-0`}>
+                              {job.matchScore}% Match
+                            </Badge>
+                          )}
                         </div>
                         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6 text-sm">
                           <div className="flex items-center gap-2">
@@ -304,39 +441,41 @@ export function JobMatches() {
                             {job.source}
                           </Badge>
                         </div>
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                              Interview Probability
-                            </span>
-                            <span className={`text-sm font-semibold ${getProbabilityColor(job.interviewProbability)}`}>
-                              {job.interviewProbability}%
-                            </span>
-                          </div>
-                          <Progress value={job.interviewProbability} className="h-2" />
-                        </div>
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle2 className="w-4 h-4 text-green-600" />
-                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Matching Skills:</span>
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            {job.skills.map((skill) => (
-                              <Badge
-                                key={skill}
-                                variant="outline"
-                                className="bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800"
-                              >
-                                {skill}
-                              </Badge>
-                            ))}
-                          </div>
-                        </div>
-                        {job.missingSkills.length > 0 && (
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-2">
-                              <AlertCircle className="w-4 h-4 text-orange-600" />
-                              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Skills to Add:</span>
+                        {job.status !== 'analyzing' && (
+                          <>
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                  Interview Probability
+                                </span>
+                                <span className={`text-sm font-semibold ${getProbabilityColor(job.interviewProbability)}`}>
+                                  {job.interviewProbability}%
+                                </span>
+                              </div>
+                              <Progress value={job.interviewProbability} className="h-2" />
+                            </div>
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2">
+                                <CheckCircle2 className="w-4 h-4 text-green-600" />
+                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Matching Skills:</span>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {job.skills.map((skill) => (
+                                  <Badge
+                                    key={skill}
+                                    variant="outline"
+                                    className="bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800"
+                                  >
+                                    {skill}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                            {job.missingSkills.length > 0 && (
+                              <div className="space-y-2">
+                                <div className="flex items-center gap-2">
+                                  <AlertCircle className="w-4 h-4 text-orange-600" />
+                                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Skills to Add:</span>
                             </div>
                             <div className="flex flex-wrap gap-2">
                               {job.missingSkills.map((skill) => (
@@ -350,6 +489,8 @@ export function JobMatches() {
                               ))}
                             </div>
                           </div>
+                            )}
+                          </>
                         )}
                         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 pt-2">
                           {job.externalUrl && (
@@ -369,7 +510,7 @@ export function JobMatches() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                disabled={markingId === job.rawId}
+                                disabled={markingId === job.rawId || job.status === 'analyzing'}
                                 onClick={() => handleMarkApplied(job.rawId, false)}
                               >
                                 {markingId === job.rawId ? "Updating…" : "Undo"}
@@ -379,7 +520,7 @@ export function JobMatches() {
                             <Button
                               variant="outline"
                               size="sm"
-                              disabled={markingId === job.rawId}
+                              disabled={markingId === job.rawId || job.status === 'analyzing'}
                               onClick={() => handleMarkApplied(job.rawId, true)}
                             >
                               {markingId === job.rawId ? "Updating…" : "Mark as applied"}
@@ -391,7 +532,7 @@ export function JobMatches() {
                   </CardContent>
                 </Card>
               </motion.div>
-            ))}
+            )))}
           </div>
         )}
 
