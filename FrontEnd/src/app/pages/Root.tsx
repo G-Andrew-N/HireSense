@@ -3,6 +3,7 @@ import { Sidebar } from "../components/Sidebar";
 import { ThemeProvider } from "next-themes";
 import { MobileNav } from "../components/MobileNav";
 import { ScanProvider } from "../../lib/scan-context";
+import { NotificationProvider } from "../../lib/notification-context";
 import { useEffect } from "react";
 import { useAuth } from "../../lib/auth-context";
 
@@ -37,9 +38,11 @@ export function Root() {
         <MobileNav />
         
         <div className="flex-1 flex flex-col overflow-hidden pt-[57px] lg:pt-0">
-          <ScanProvider>
-            <Outlet />
-          </ScanProvider>
+          <NotificationProvider>
+            <ScanProvider>
+              <Outlet />
+            </ScanProvider>
+          </NotificationProvider>
         </div>
       </div>
     </ThemeProvider>

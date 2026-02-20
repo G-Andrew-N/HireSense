@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Header } from "../components/Header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../components/ui/card";
@@ -8,6 +8,7 @@ import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Globe, Bell, Mail, User, Save, Loader2, Camera, Pencil, CheckCircle, AlertCircle } from "lucide-react";
 import {
+  getJobMatchesWithPending,
   updateProfile,
 } from "../../lib/api";
 import { useAuth } from "../../lib/auth-context";
@@ -24,33 +25,73 @@ interface JobSource {
 export function Settings() {
   const { user, setUser } = useAuth();
   const [jobSources, setJobSources] = useState<JobSource[]>([]);
+  const [activeSourceNames, setActiveSourceNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
+  const [notificationSaving, setNotificationSaving] = useState(false);
   const [firstName, setFirstName] = useState(user?.first_name ?? "");
   const [lastName, setLastName] = useState(user?.last_name ?? "");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  // Notification preferences
+  const [emailNotifications, setEmailNotifications] = useState(user?.email_notifications ?? true);
+  const [highMatchAlerts, setHighMatchAlerts] = useState(user?.high_match_alerts ?? true);
+  const [weeklyReports, setWeeklyReports] = useState(user?.weekly_reports ?? false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (user) {
       setFirstName(user.first_name ?? "");
       setLastName(user.last_name ?? "");
+      setEmailNotifications(user.email_notifications ?? true);
+      setHighMatchAlerts(user.high_match_alerts ?? true);
+      setWeeklyReports(user.weekly_reports ?? false);
     }
   }, [user]);
 
+  const refreshActiveSources = async () => {
+    try {
+      const data = await getJobMatchesWithPending();
+      const names = Array.from(new Set((data.results ?? []).map((job) => job.source).filter(Boolean)));
+      setActiveSourceNames(names);
+    } catch {
+      setActiveSourceNames([]);
+    }
+  };
+
   const load = () => {
     setLoading(true);
-    fetch("/api/jobs/sources/", { headers: { Authorization: `Bearer ${localStorage.getItem("access")}` } })
+    const sourcesPromise = fetch("/api/jobs/sources/", {
+      headers: { Authorization: `Bearer ${localStorage.getItem("access")}` },
+    })
       .then((res) => res.json())
-      .then((data) => setJobSources(data.sources || []))
-      .catch(() => toast.error("Failed to load settings"))
+      .then((data) => setJobSources(data.sources || []));
+
+    const activePromise = refreshActiveSources();
+
+    Promise.allSettled([sourcesPromise, activePromise])
+      .then((results) => {
+        const sourcesFailed = results[0]?.status === "rejected";
+        if (sourcesFailed) toast.error("Failed to load job sources");
+      })
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
     load();
+
+    const interval = window.setInterval(() => {
+      refreshActiveSources();
+    }, 15000);
+
+    const handleFocus = () => refreshActiveSources();
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", handleFocus);
+    };
   }, []);
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -96,6 +137,36 @@ export function Settings() {
     lastName !== (user?.last_name ?? "") ||
     avatarFile !== null;
 
+  const notificationsDirty =
+    emailNotifications !== (user?.email_notifications ?? true) ||
+    highMatchAlerts !== (user?.high_match_alerts ?? true) ||
+    weeklyReports !== (user?.weekly_reports ?? false);
+
+  const handleSaveNotifications = async () => {
+    if (!user) return;
+    setNotificationSaving(true);
+    try {
+      const updated = await updateProfile({
+        email_notifications: emailNotifications,
+        high_match_alerts: highMatchAlerts,
+        weekly_reports: weeklyReports,
+      });
+      setUser(updated);
+      toast.success("Notification preferences saved");
+    } catch (err: unknown) {
+      const msg = (err as { body?: { detail?: string } })?.body?.detail ?? "Failed to save notification preferences";
+      toast.error(msg);
+    } finally {
+      setNotificationSaving(false);
+    }
+  };
+
+  const visibleSources = useMemo(() => {
+    if (activeSourceNames.length === 0) return [];
+    const activeSet = new Set(activeSourceNames);
+    return jobSources.filter((source) => activeSet.has(source.name));
+  }, [activeSourceNames, jobSources]);
+
   return (
     <div className="flex flex-col h-full overflow-auto">
       <Header
@@ -122,8 +193,8 @@ export function Settings() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {jobSources.length > 0 ? (
-                    jobSources.map((source) => (
+                  {visibleSources.length > 0 ? (
+                    visibleSources.map((source) => (
                       <div
                         key={source.name}
                         className={`flex items-start gap-4 p-4 border rounded-lg transition-colors ${
@@ -161,7 +232,7 @@ export function Settings() {
                       </div>
                     ))
                   ) : (
-                    <p className="text-sm text-gray-500">No job sources configured</p>
+                    <p className="text-sm text-gray-500">No job sources have returned results yet</p>
                   )}
                 </div>
               )}
@@ -179,7 +250,7 @@ export function Settings() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
                 <div className="flex items-center gap-3">
                   <Mail className="w-5 h-5 text-gray-600 dark:text-gray-400" />
                   <div>
@@ -187,9 +258,9 @@ export function Settings() {
                     <p className="text-sm text-gray-500 dark:text-gray-400">Get daily summaries of new matches</p>
                   </div>
                 </div>
-                <Switch defaultChecked />
+                <Switch checked={emailNotifications} onCheckedChange={setEmailNotifications} />
               </div>
-              <div className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
                 <div className="flex items-center gap-3">
                   <Bell className="w-5 h-5 text-gray-600 dark:text-gray-400" />
                   <div>
@@ -197,9 +268,9 @@ export function Settings() {
                     <p className="text-sm text-gray-500 dark:text-gray-400">Instant alerts for 85%+ matches</p>
                   </div>
                 </div>
-                <Switch defaultChecked />
+                <Switch checked={highMatchAlerts} onCheckedChange={setHighMatchAlerts} />
               </div>
-              <div className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
                 <div className="flex items-center gap-3">
                   <Bell className="w-5 h-5 text-gray-600 dark:text-gray-400" />
                   <div>
@@ -207,8 +278,18 @@ export function Settings() {
                     <p className="text-sm text-gray-500 dark:text-gray-400">Summary of activity and insights</p>
                   </div>
                 </div>
-                <Switch />
+                <Switch checked={weeklyReports} onCheckedChange={setWeeklyReports} />
               </div>
+              {notificationsDirty && (
+                <Button
+                  onClick={handleSaveNotifications}
+                  disabled={notificationSaving}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700"
+                >
+                  {notificationSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+                  Save preferences
+                </Button>
+              )}
             </CardContent>
           </Card>
 

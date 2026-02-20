@@ -176,6 +176,12 @@ export interface User {
   last_name: string;
   /** Profile photo URL (absolute). */
   avatar: string | null;
+  /** Get daily summaries of new matches via email. */
+  email_notifications?: boolean;
+  /** Instant alerts for 85%+ matches. */
+  high_match_alerts?: boolean;
+  /** Summary of activity and insights sent weekly. */
+  weekly_reports?: boolean;
 }
 
 export async function getMe(): Promise<User> {
@@ -186,6 +192,9 @@ export interface UpdateProfilePayload {
   first_name?: string;
   last_name?: string;
   avatar?: File;
+  email_notifications?: boolean;
+  high_match_alerts?: boolean;
+  weekly_reports?: boolean;
 }
 
 export async function updateProfile(payload: UpdateProfilePayload): Promise<User> {
@@ -194,6 +203,9 @@ export async function updateProfile(payload: UpdateProfilePayload): Promise<User
     const form = new FormData();
     if (rest.first_name !== undefined) form.set('first_name', rest.first_name);
     if (rest.last_name !== undefined) form.set('last_name', rest.last_name);
+    if (rest.email_notifications !== undefined) form.set('email_notifications', String(rest.email_notifications));
+    if (rest.high_match_alerts !== undefined) form.set('high_match_alerts', String(rest.high_match_alerts));
+    if (rest.weekly_reports !== undefined) form.set('weekly_reports', String(rest.weekly_reports));
     form.set('avatar', avatar);
     return apiRequest<User>('/auth/me/', { method: 'PATCH', body: form });
   }

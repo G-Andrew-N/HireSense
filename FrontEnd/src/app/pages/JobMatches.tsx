@@ -76,7 +76,7 @@ export function JobMatches() {
   const { isScanning, setScanning } = useScan();
   const [matches, setMatches] = useState<JobMatch[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("high");
+  const [filter, setFilter] = useState("all");
   const [markingId, setMarkingId] = useState<number | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
   const [scanInFlight, setScanInFlight] = useState(false);
@@ -97,9 +97,19 @@ export function JobMatches() {
           setMatches(response.results);
           setPendingCount(nextPending);
           console.log('[JobMatches] updated state - matches:', nextCount, 'pending:', response.pending_count);
-          if (scanInFlightRef.current && (nextPending > 0 || nextCount > scanStartCountRef.current)) {
+          
+          // Clear scanInFlight when analysis is complete (pendingCount reaches 0)
+          if (scanInFlightRef.current && nextPending === 0) {
             scanInFlightRef.current = false;
             setScanInFlight(false);
+            
+            // Notify user if scan completed but no new qualifying matches were found
+            if (nextCount === scanStartCountRef.current) {
+              toast.info("Scan complete. No new qualifying job matches found.");
+            } else {
+              const newMatches = nextCount - scanStartCountRef.current;
+              toast.success(`Found ${newMatches} new job match${newMatches === 1 ? '' : 'es'}!`);
+            }
           }
         }
       })
@@ -184,7 +194,7 @@ export function JobMatches() {
   useEffect(() => {
     if (!isScanning) return;
     // Stop scanning if no pending jobs (all analysis complete)
-    if (!scanInFlight && pendingCount === 0 && matches.length > 0) {
+    if (!scanInFlight && pendingCount === 0) {
       setScanning(false);
       return;
     }
@@ -373,13 +383,10 @@ export function JobMatches() {
           <div className="space-y-4">
             {filteredJobs.length === 0 ? (
               <div className="text-center text-gray-500 py-8">
-                {filter === "high" && matches.some(m => {
-                  const toDisp = toDisplay(m);
-                  return toDisp.status !== 'analyzing' && Number(toDisp.matchScore) < 85;
-                }) ? (
+                {matches.length > 0 && filter !== "all" ? (
                   <>
-                    <p>No high-quality matches yet.</p>
-                    <p className="text-xs text-gray-400 mt-2">Try browsing Medium or Low match jobs, or scan for more positions.</p>
+                    <p>No jobs match your current filter.</p>
+                    <p className="text-xs text-gray-400 mt-2">Try changing the filter or scan for more positions.</p>
                   </>
                 ) : (
                   <p>No job matches yet. Click "Scan for New Jobs" to get started!</p>

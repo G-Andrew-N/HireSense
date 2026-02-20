@@ -55,7 +55,7 @@ export function Header({ title, subtitle, showSearch = false }: HeaderProps) {
           variant="ghost" 
           size="icon" 
           className="relative flex-shrink-0 hidden lg:flex"
-          onClick={() => navigate("notifications")}
+          onClick={() => navigate("/dashboard/notifications")}
         >
           <Bell className="w-5 h-5 text-gray-600 dark:text-gray-400" />
           <span className="absolute top-2 right-2 w-2 h-2 bg-blue-600 rounded-full" />

@@ -81,13 +81,53 @@ export function TermsOfService() {
               </h2>
               <p className="text-gray-600 dark:text-gray-400 leading-relaxed mb-4">
                 HireSense can only search and monitor job postings available via the public sources
-                we integrate with (for example, Remotive and We Work Remotely). The Service cannot
-                search private, enterprise-only, or otherwise restricted listings that are not
-                accessible through these supported sources. By creating an account and uploading a
-                resume, you acknowledge that job discovery is limited to the coverage of the active
-                job sources and that not all available positions on the internet or within specific
-                organizations will be discoverable through HireSense.
+                we integrate with. The Service cannot search private, enterprise-only, or otherwise
+                restricted listings that are not accessible through these supported sources. By creating
+                an account and uploading a resume, you acknowledge that job discovery is limited to the
+                coverage of the active job sources and that not all available positions on the internet
+                or within specific organizations will be discoverable through HireSense.
               </p>
+              
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-3 mt-5">
+                Supported Job Sources
+              </h3>
+              <p className="text-gray-600 dark:text-gray-400 leading-relaxed mb-3">
+                HireSense integrates with 12 major remote job boards across multiple specializations:
+              </p>
+              <ul className="list-disc list-inside text-gray-600 dark:text-gray-400 leading-relaxed space-y-2 ml-4 mb-4">
+                <li><strong>Remote Generalists:</strong> Remotive, We Work Remotely, Remote.ok, JustRemote</li>
+                <li><strong>Technology Focused:</strong> GitHub Jobs, Stack Overflow Jobs, DEV Community Jobs</li>
+                <li><strong>Design Specialization:</strong> Dribbble Remote</li>
+                <li><strong>General Job Boards:</strong> Indeed, LinkedIn, Glassdoor, ZipRecruiter</li>
+              </ul>
+              
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-3 mt-5">
+                Profession Detection & Matching
+              </h3>
+              <p className="text-gray-600 dark:text-gray-400 leading-relaxed mb-3">
+                HireSense uses artificial intelligence to analyze your resume and automatically detect
+                your profession and industry. This enables the system to:
+              </p>
+              <ul className="list-disc list-inside text-gray-600 dark:text-gray-400 leading-relaxed space-y-2 ml-4 mb-4">
+                <li>Target job sources most relevant to your career field</li>
+                <li>Identify opportunities that match your skills and experience level</li>
+                <li>Provide profession-specific job search strategies</li>
+              </ul>
+              <p className="text-gray-600 dark:text-gray-400 leading-relaxed text-sm italic mb-4">
+                Profession detection results are cached for 24 hours per resume to optimize system performance.
+              </p>
+              
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-3 mt-5">
+                Match Score Methodology
+              </h3>
+              <p className="text-gray-600 dark:text-gray-400 leading-relaxed mb-3">
+                Jobs are analyzed against your resume and assigned a match probability score from 0-100:
+              </p>
+              <ul className="list-disc list-inside text-gray-600 dark:text-gray-400 leading-relaxed space-y-2 ml-4 mb-4">
+                <li><strong>Score ≥ 25:</strong> Displayed as job matches with clear opportunity indicators</li>
+                <li><strong>Score &lt; 25:</strong> May be shown for reference but are less likely to align with your qualifications</li>
+              </ul>
+              
               <p className="text-gray-600 dark:text-gray-400 leading-relaxed">
                 We will also remind you of these limitations when you create an account and when you
                 upload a resume.

@@ -1,6 +1,7 @@
 import { Header } from "../components/Header";
 import { Card, CardContent } from "../components/ui/card";
 import { Button } from "../components/ui/button";
+import { NotificationDetailModal } from "../components/NotificationDetailModal";
 import { 
   Bell,
   CheckCheck,
@@ -14,95 +15,9 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../components/ui/utils";
+import { useNotification, type Notification } from "../../lib/notification-context";
 
 type NotificationType = "match" | "resume" | "insight" | "system" | "achievement";
-
-interface Notification {
-  id: string;
-  type: NotificationType;
-  title: string;
-  message: string;
-  time: string;
-  read: boolean;
-  priority?: "high" | "normal";
-}
-
-const mockNotifications: Notification[] = [
-  {
-    id: "1",
-    type: "match",
-    title: "New High-Priority Match!",
-    message: "Senior Frontend Developer at TechCorp matches your profile at 94%. Apply before the deadline.",
-    time: "5 minutes ago",
-    read: false,
-    priority: "high"
-  },
-  {
-    id: "2",
-    type: "achievement",
-    title: "Application Milestone Reached",
-    message: "Congratulations! You've reached 50 job applications this month.",
-    time: "1 hour ago",
-    read: false,
-  },
-  {
-    id: "3",
-    type: "insight",
-    title: "Resume Optimization Tip",
-    message: "Adding 'React Hooks' to your skills could increase your match rate by 15%.",
-    time: "3 hours ago",
-    read: false,
-  },
-  {
-    id: "4",
-    type: "match",
-    title: "3 New Job Matches Found",
-    message: "We found 3 new positions matching your criteria in San Francisco.",
-    time: "5 hours ago",
-    read: true,
-  },
-  {
-    id: "5",
-    type: "resume",
-    title: "Resume Analysis Complete",
-    message: "Your updated resume has been analyzed. View 8 new improvement suggestions.",
-    time: "Yesterday",
-    read: true,
-  },
-  {
-    id: "6",
-    type: "system",
-    title: "Weekly Activity Report Ready",
-    message: "Your job search summary for this week is now available.",
-    time: "Yesterday",
-    read: true,
-  },
-  {
-    id: "7",
-    type: "match",
-    title: "Job Match Alert",
-    message: "Product Manager at InnovateLabs (89% match) - Premium opportunity.",
-    time: "2 days ago",
-    read: true,
-    priority: "high"
-  },
-  {
-    id: "8",
-    type: "insight",
-    title: "Application Strategy Insight",
-    message: "Jobs posted on Monday mornings have a 23% higher response rate. Plan accordingly!",
-    time: "3 days ago",
-    read: true,
-  },
-  {
-    id: "9",
-    type: "system",
-    title: "System Maintenance Scheduled",
-    message: "HireSense will undergo brief maintenance on Sunday at 2 AM PST.",
-    time: "4 days ago",
-    read: true,
-  },
-];
 
 const notificationIcons: Record<NotificationType, any> = {
   match: Briefcase,
@@ -129,21 +44,30 @@ const notificationIconColors: Record<NotificationType, string> = {
 };
 
 export function Notifications() {
-  const [notifications, setNotifications] = useState(mockNotifications);
+  const { notifications, markAsRead, markAllAsRead, clearReadNotifications } = useNotification();
   const [filter, setFilter] = useState<"all" | "unread">("all");
+  const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
-  const markAllAsRead = () => {
-    setNotifications(notifications.map(n => ({ ...n, read: true })));
+  const handleNotificationClick = (notification: Notification) => {
+    setSelectedNotification(notification);
+    // Mark as read when opening details
+    if (!notification.read) {
+      markAsRead(notification.id);
+    }
   };
 
-  const markAsRead = (id: string) => {
-    setNotifications(notifications.map(n => 
-      n.id === id ? { ...n, read: true } : n
-    ));
+  const handleCloseModal = () => {
+    setSelectedNotification(null);
   };
 
+  const handleClearReadNotifications = () => {
+    clearReadNotifications();
+    setFilter("all"); // Reset to all view
+  };
+
+  const readCount = notifications.length - unreadCount;
   const filteredNotifications = filter === "all" 
     ? notifications 
     : notifications.filter(n => !n.read);
@@ -177,17 +101,29 @@ export function Notifications() {
             </Button>
           </div>
 
-          {unreadCount > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={markAllAsRead}
-              className="text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950"
-            >
-              <CheckCheck className="w-4 h-4 mr-2" />
-              Mark All as Read
-            </Button>
-          )}
+          <div className="flex gap-2">
+            {unreadCount > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={markAllAsRead}
+                className="text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950"
+              >
+                <CheckCheck className="w-4 h-4 mr-2" />
+                Mark All as Read
+              </Button>
+            )}
+            {readCount > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleClearReadNotifications}
+                className="text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                Clear Read ({readCount})
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Notifications List */}
@@ -222,7 +158,7 @@ export function Notifications() {
                       : "bg-blue-50/50 dark:bg-blue-950/20 border-l-blue-600 dark:border-l-blue-400",
                     notification.priority === "high" && !notification.read && "border-l-red-600 dark:border-l-red-400"
                   )}
-                  onClick={() => !notification.read && markAsRead(notification.id)}
+                  onClick={() => handleNotificationClick(notification)}
                 >
                   <CardContent className="p-4 sm:p-5">
                     <div className="flex gap-4">
@@ -270,6 +206,14 @@ export function Notifications() {
           )}
         </div>
       </div>
+
+      {/* Notification Detail Modal */}
+      {selectedNotification && (
+        <NotificationDetailModal
+          notification={selectedNotification}
+          onClose={handleCloseModal}
+        />
+      )}
     </div>
   );
 }

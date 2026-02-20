@@ -40,10 +40,13 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 class UserSerializer(serializers.ModelSerializer):
     avatar = serializers.SerializerMethodField(read_only=True)
+    email_notifications = serializers.SerializerMethodField(read_only=True)
+    high_match_alerts = serializers.SerializerMethodField(read_only=True)
+    weekly_reports = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = User
-        fields = ("id", "email", "first_name", "last_name", "avatar")
+        fields = ("id", "email", "first_name", "last_name", "avatar", "email_notifications", "high_match_alerts", "weekly_reports")
         read_only_fields = ("id", "email")
 
     def get_avatar(self, obj):
@@ -54,6 +57,24 @@ class UserSerializer(serializers.ModelSerializer):
         if not profile or not profile.avatar:
             return None
         return request.build_absolute_uri(profile.avatar.url)
+
+    def get_email_notifications(self, obj):
+        profile = getattr(obj, "profile", None)
+        if not profile:
+            return True
+        return profile.email_notifications
+
+    def get_high_match_alerts(self, obj):
+        profile = getattr(obj, "profile", None)
+        if not profile:
+            return True
+        return profile.high_match_alerts
+
+    def get_weekly_reports(self, obj):
+        profile = getattr(obj, "profile", None)
+        if not profile:
+            return False
+        return profile.weekly_reports
 
 
 class LoginSerializer(serializers.Serializer):

@@ -151,7 +151,7 @@ export function Resume() {
   const resumeMetrics = current?.parsed_content
     ? [
         { label: "Skills", value: (current.parsed_content.skills as string[])?.length ? 90 : 50, status: "good" as const },
-        { label: "Experience", value: (current.parsed_content.experience as unknown[])?.length ? 85 : 60, status: "warning" as const },
+        { label: "Experience", value: (current.parsed_content.experience as unknown[])?.length ? 85 : 60, status: (current.parsed_content.experience as unknown[])?.length ? "good" as const : "warning" as const },
         { label: "Education", value: (current.parsed_content.education as unknown[])?.length ? 80 : 50, status: "good" as const },
       ]
     : [

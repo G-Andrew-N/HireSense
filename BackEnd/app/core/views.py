@@ -131,6 +131,8 @@ class MeView(APIView):
     def patch(self, request):
         user = request.user
         profile, _ = UserProfile.objects.get_or_create(user=user, defaults={})
+        profile_updates = []
+        
         if request.content_type and "multipart/form-data" in request.content_type:
             if "first_name" in request.data:
                 user.first_name = request.data.get("first_name", user.first_name) or ""
@@ -139,14 +141,35 @@ class MeView(APIView):
             avatar_file = request.FILES.get("avatar")
             if avatar_file:
                 profile.avatar = avatar_file
-                profile.save(update_fields=["avatar"])
+                profile_updates.append("avatar")
+            if "email_notifications" in request.data:
+                profile.email_notifications = request.data.get("email_notifications") in [True, "true", "True", 1, "1"]
+                profile_updates.append("email_notifications")
+            if "high_match_alerts" in request.data:
+                profile.high_match_alerts = request.data.get("high_match_alerts") in [True, "true", "True", 1, "1"]
+                profile_updates.append("high_match_alerts")
+            if "weekly_reports" in request.data:
+                profile.weekly_reports = request.data.get("weekly_reports") in [True, "true", "True", 1, "1"]
+                profile_updates.append("weekly_reports")
         else:
             data = request.data
             if "first_name" in data:
                 user.first_name = data.get("first_name", user.first_name) or ""
             if "last_name" in data:
                 user.last_name = data.get("last_name", user.last_name) or ""
+            if "email_notifications" in data:
+                profile.email_notifications = data.get("email_notifications") in [True, "true", "True", 1, "1"]
+                profile_updates.append("email_notifications")
+            if "high_match_alerts" in data:
+                profile.high_match_alerts = data.get("high_match_alerts") in [True, "true", "True", 1, "1"]
+                profile_updates.append("high_match_alerts")
+            if "weekly_reports" in data:
+                profile.weekly_reports = data.get("weekly_reports") in [True, "true", "True", 1, "1"]
+                profile_updates.append("weekly_reports")
+        
         user.save(update_fields=["first_name", "last_name"])
+        if profile_updates:
+            profile.save(update_fields=profile_updates)
         return Response(UserSerializer(user, context={"request": request}).data)
 
 
@@ -603,10 +626,14 @@ class JobMatchViewSet(ModelViewSet):
 
     def get_queryset(self):
         from .tasks import _get_enabled_job_source_names
-        # Show matches from all enabled job sources
+        # Show matches from all enabled job sources, score >= 25 only
         enabled_sources = _get_enabled_job_source_names()
         return (
-            JobMatch.objects.filter(user=self.request.user, source__in=enabled_sources)
+            JobMatch.objects.filter(
+                user=self.request.user, 
+                source__in=enabled_sources,
+                match_score__gte=25  # Only show matches with score >= 25
+            )
             .order_by("-match_score", "-created_at")
         )
 
@@ -614,21 +641,27 @@ class JobMatchViewSet(ModelViewSet):
     def with_pending(self, request):
         """Return both matched jobs and pending jobs (analyzing). Pending jobs have status='analyzing'."""
         from .tasks import _get_enabled_job_source_names
+        from .tasks import _get_current_resume
+        from .resume_utils import get_job_search_query
         from rest_framework.response import Response
         import logging
 
         logger = logging.getLogger(__name__)
         enabled_sources = _get_enabled_job_source_names()
         
-        # Get matched jobs
+        # Get matched jobs (score >= 25 only)
         matched = JobMatch.objects.filter(
-            user=request.user, source__in=enabled_sources
+            user=request.user, 
+            source__in=enabled_sources,
+            match_score__gte=25  # Only show good matches
         ).order_by("-match_score", "-created_at")
         
-        # Get recently fetched (last 5 minutes) unmatched postings (pending analysis)
+        # Get recently ANALYZED jobs (JobMatch created in last 10 minutes, regardless of score)
+        # These are shown as "analyzing" until they reach the score threshold or timeout
         from django.utils import timezone
         from datetime import timedelta
         
+        analysis_cutoff = timezone.now() - timedelta(minutes=10)
         recent_cutoff = timezone.now() - timedelta(minutes=5)
         all_recent = JobPosting.objects.filter(fetched_at__gte=recent_cutoff)
         logger.info(f"with_pending: enabled_sources={enabled_sources}, all_recent_count={all_recent.count()}")
@@ -637,21 +670,51 @@ class JobMatchViewSet(ModelViewSet):
         for jp in all_recent:
             logger.info(f"  Recent job: id={jp.id}, source={jp.source}, title={jp.title}")
         
-        pending_postings = JobPosting.objects.filter(
+        # Show as pending ONLY jobs that have JobMatch records created recently (being analyzed right now)
+        # Don't show unmatched jobs that haven't been queued for analysis yet
+        pending_postings = JobMatch.objects.filter(
+            user=request.user,
             source__in=enabled_sources,
-            fetched_at__gte=recent_cutoff
-        ).exclude(
-            matches__user=request.user  # Exclude already matched
-        ).order_by("-fetched_at")
+            created_at__gte=analysis_cutoff,
+            match_score__lt=25  # Only show analyzing jobs (score < 25 means not in matched list)
+        ).values_list('job_posting', flat=True)
         
-        logger.info(f"with_pending: pending_postings_count={pending_postings.count()}")
+        # Convert IDs back to JobPosting objects
+        pending_posting_objs = JobPosting.objects.filter(id__in=pending_postings)
+        
+        logger.info(f"with_pending: pending_jobs_count={len(pending_posting_objs)}")
         
         # Serialize matched jobs
         matched_data = JobMatchSerializer(matched, many=True).data
         
+        # Filter pending postings to the user's resume query to avoid irrelevant analyzing items
+        resume = _get_current_resume(request.user)
+        query = get_job_search_query(resume) if resume else "jobs"
+        keywords = [w.lower() for w in query.split() if len(w) > 2]
+
+        # Only show pending jobs if we know the user's profession (query != "jobs")
+        # Otherwise, showing random tech/design jobs to a real estate agent is misleading
+        if keywords and query.lower() != "jobs":
+            filtered_pending = []
+            for posting in pending_posting_objs:
+                title_lower = (posting.title or '').lower()
+                desc_lower = (posting.description or '')[:500].lower()  # First 500 chars of description
+                
+                # Count how many keywords match (prioritize title matches)
+                title_matches = sum(1 for k in keywords if k in title_lower)
+                desc_matches = sum(1 for k in keywords if k in desc_lower)
+                
+                # Require: at least 1 keyword in title OR 2+ keywords in description
+                # This prevents weak matches like "real-time" matching "Real Estate Agent"
+                if title_matches >= 1 or desc_matches >= 2:
+                    filtered_pending.append(posting)
+        else:
+            # Don't show pending jobs when profession is unknown
+            filtered_pending = []
+
         # Convert pending postings to a match-like format with status='analyzing'
         pending_data = []
-        for posting in pending_postings:
+        for posting in filtered_pending:
             pending_data.append({
                 "id": None,  # No JobMatch ID yet
                 "user": request.user.id,

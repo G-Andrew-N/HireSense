@@ -81,7 +81,10 @@ export function Dashboard() {
       .finally(() => setLoading(false));
   }, []);
 
-  const topMatches = matches.slice(0, 3).map(toDisplayMatch);
+  const analyzedMatches = matches
+    .filter((m) => m.match_score != null && m.status !== "analyzing")
+    .sort((a, b) => (b.match_score ?? 0) - (a.match_score ?? 0));
+  const topMatches = analyzedMatches.slice(0, 3).map(toDisplayMatch);
   const totalMatches = matches.length;
   const applicationsCount = matches.filter((m) => m.applied_at != null).length;
   const avgScore = totalMatches > 0
