@@ -3,8 +3,7 @@ services:
     name: hiresense-backend
     runtime: python
     pythonVersion: 3.11.0
-    rootDir: BackEnd/app
-    buildCommand: pip install -r ../../requirements.txt && python manage.py collectstatic --noinput
+    buildCommand: pip install -r ./requirements.txt && python manage.py collectstatic --noinput
     startCommand: python -m gunicorn app.wsgi:application --bind 0.0.0.0:$PORT --workers 2
     envVars:
       - key: PYTHON_VERSION
