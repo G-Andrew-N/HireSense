@@ -2,7 +2,13 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useAuth } from '@/lib/auth-context';
 import { apiRequest } from '@/lib/api';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
+
+interface Toast {
+  id: number;
+  message: string;
+  type: 'success' | 'error' | 'info';
+}
 
 interface AdminStats {
   users: {
@@ -51,9 +57,20 @@ export function AdminDashboard() {
     notification_type: 'info',
   });
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState<'pending' | 'history'>('pending');
+  const [clearingHistory, setClearingHistory] = useState(false);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [sendingIds, setSendingIds] = useState<Set<number>>(new Set());
+
+  // Toast notification helper
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 3000);
+  };
 
   // Check if user is superuser
   useEffect(() => {
@@ -71,14 +88,13 @@ export function AdminDashboard() {
         setLoading(true);
         const [statsData, notificationsData] = await Promise.all([
           apiRequest<AdminStats>('/admin/notifications/admin_stats/'),
-          apiRequest<{ results: SystemNotification[] }>('/admin/notifications/'),
+          apiRequest<SystemNotification[]>('/admin/notifications/'),
         ]);
 
         setStats(statsData);
-        setNotifications(notificationsData.results || []);
-        setError('');
+        setNotifications(Array.isArray(notificationsData) ? notificationsData : []);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load data');
+        showToast(err instanceof Error ? err.message : 'Failed to load data', 'error');
       } finally {
         setLoading(false);
       }
@@ -93,15 +109,14 @@ export function AdminDashboard() {
       setRefreshing(true);
       const [statsData, notificationsData] = await Promise.all([
         apiRequest<AdminStats>('/admin/notifications/admin_stats/'),
-        apiRequest<{ results: SystemNotification[] }>('/admin/notifications/'),
+        apiRequest<SystemNotification[]>('/admin/notifications/'),
       ]);
 
       setStats(statsData);
-      setNotifications(notificationsData.results || []);
-      setSuccess('Stats refreshed');
-      setTimeout(() => setSuccess(''), 2000);
+      setNotifications(Array.isArray(notificationsData) ? notificationsData : []);
+      showToast('Stats refreshed', 'success');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to refresh data');
+      showToast(err instanceof Error ? err.message : 'Failed to refresh data', 'error');
     } finally {
       setRefreshing(false);
     }
@@ -110,28 +125,73 @@ export function AdminDashboard() {
   const handleCreateNotification = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      setError('');
-      const newNotification = await apiRequest<SystemNotification>('/admin/notifications/', {
+      await apiRequest<SystemNotification>('/admin/notifications/', {
         method: 'POST',
         body: JSON.stringify(formData),
       });
 
-      // Send notification immediately
-      await apiRequest('/admin/notifications/send_notification/', {
-        method: 'POST',
-        body: JSON.stringify({ notification_id: newNotification.id }),
-      });
-
-      // Refresh notifications list to get the updated notification with is_sent=true
-      const updatedNotifications = await apiRequest<{ results: SystemNotification[] }>('/admin/notifications/');
-      setNotifications(updatedNotifications.results || []);
+      // Refresh notifications list to show the new pending notification
+      const updatedNotifications = await apiRequest<SystemNotification[]>('/admin/notifications/');
+      setNotifications(Array.isArray(updatedNotifications) ? updatedNotifications : []);
       
       setFormData({ title: '', message: '', notification_type: 'info' });
       setShowNotificationForm(false);
-      setSuccess('Notification sent successfully!');
-      setTimeout(() => setSuccess(''), 3000);
+      setActiveTab('pending'); // Switch to pending tab to see the new notification
+      showToast('Notification created and added to pending queue', 'success');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create notification');
+      showToast(err instanceof Error ? err.message : 'Failed to create notification', 'error');
+    }
+  };
+
+  const handleSendNotification = async (notificationId: number) => {
+    try {
+      setSendingIds(prev => new Set(prev).add(notificationId));
+      
+      // Send notification
+      await apiRequest('/admin/notifications/send_notification/', {
+        method: 'POST',
+        body: JSON.stringify({ notification_id: notificationId }),
+      });
+
+      // Refresh notifications list
+      const updatedNotifications = await apiRequest<SystemNotification[]>('/admin/notifications/');
+      setNotifications(Array.isArray(updatedNotifications) ? updatedNotifications : []);
+      
+      showToast('Notification sent successfully!', 'success');
+      
+      // Auto switch to history tab to see the sent notification
+      setActiveTab('history');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to send notification', 'error');
+    } finally {
+      setSendingIds(prev => {
+        const next = new Set(prev);
+        next.delete(notificationId);
+        return next;
+      });
+    }
+  };
+
+  const handleClearHistory = async () => {
+    if (!confirm('Are you sure you want to clear all notification history? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      setClearingHistory(true);
+      await apiRequest('/admin/notifications/clear_history/', {
+        method: 'POST',
+      });
+
+      // Refresh notifications list
+      const updatedNotifications = await apiRequest<SystemNotification[]>('/admin/notifications/');
+      setNotifications(Array.isArray(updatedNotifications) ? updatedNotifications : []);
+      
+      showToast('Notification history cleared successfully!', 'success');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to clear history', 'error');
+    } finally {
+      setClearingHistory(false);
     }
   };
 
@@ -178,7 +238,7 @@ export function AdminDashboard() {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="px-4 py-2 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-gray-900 dark:text-white rounded-lg font-medium transition"
+            className="px-4 py-2 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-gray-900 dark:text-white font-medium transition"
           >
             {refreshing ? (
               <span className="flex items-center gap-2">
@@ -194,33 +254,13 @@ export function AdminDashboard() {
           </button>
         </motion.div>
 
-        {/* Error and Success Messages */}
-        {error && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-800 dark:text-red-200"
-          >
-            {error}
-          </motion.div>
-        )}
-        {success && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="mb-4 p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg text-emerald-800 dark:text-emerald-200"
-          >
-            {success}
-          </motion.div>
-        )}
-
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-6"
+            className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 p-6"
           >
             <div className="text-gray-600 dark:text-gray-400 text-sm font-medium mb-2">
               Total Users
@@ -237,7 +277,7 @@ export function AdminDashboard() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
-            className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-6"
+            className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 p-6"
           >
             <div className="text-gray-600 dark:text-gray-400 text-sm font-medium mb-2">
               New Users (30d)
@@ -254,7 +294,7 @@ export function AdminDashboard() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
-            className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-6"
+            className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 p-6"
           >
             <div className="text-gray-600 dark:text-gray-400 text-sm font-medium mb-2">
               Job Matches
@@ -271,7 +311,7 @@ export function AdminDashboard() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.4 }}
-            className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-6"
+            className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 p-6"
           >
             <div className="text-gray-600 dark:text-gray-400 text-sm font-medium mb-2">
               Notifications
@@ -290,7 +330,7 @@ export function AdminDashboard() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5 }}
-          className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-6 mb-8"
+          className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 p-6 mb-8"
         >
           <div className="flex items-center justify-between">
             <div>
@@ -315,7 +355,7 @@ export function AdminDashboard() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.6 }}
-          className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden"
+          className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 overflow-hidden"
         >
           <div className="px-6 py-4 border-b border-gray-200 dark:border-slate-700 flex justify-between items-center">
             <h2 className="text-xl font-bold text-gray-900 dark:text-white">
@@ -323,7 +363,7 @@ export function AdminDashboard() {
             </h2>
             <button
               onClick={() => setShowNotificationForm(!showNotificationForm)}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition"
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium transition"
             >
               {showNotificationForm ? 'Cancel' : 'New Notification'}
             </button>
@@ -351,7 +391,7 @@ export function AdminDashboard() {
                     }
                     placeholder="Enter notification title"
                     required
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                   />
                 </div>
 
@@ -364,7 +404,7 @@ export function AdminDashboard() {
                     onChange={(e) =>
                       setFormData({ ...formData, notification_type: e.target.value })
                     }
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                   >
                     <option value="info">Information</option>
                     <option value="maintenance">Maintenance</option>
@@ -386,28 +426,75 @@ export function AdminDashboard() {
                     placeholder="Enter your message here"
                     required
                     rows={4}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent resize-none"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent resize-none"
                   />
                 </div>
 
                 <button
                   type="submit"
-                  className="w-full px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition"
+                  className="w-full px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium transition"
                 >
-                  Send to All Users
+                  Create Notification
                 </button>
               </div>
             </motion.form>
           )}
 
+          {/* Tabs */}
+          <div className="flex border-b border-gray-200 dark:border-slate-700">
+            <button
+              onClick={() => setActiveTab('pending')}
+              className={`flex-1 px-6 py-3 text-sm font-medium transition ${
+                activeTab === 'pending'
+                  ? 'text-emerald-600 dark:text-emerald-400 border-b-2 border-emerald-600 dark:border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-700/50'
+              }`}
+            >
+              Pending ({notifications.filter(n => !n.is_sent).length})
+            </button>
+            <button
+              onClick={() => setActiveTab('history')}
+              className={`flex-1 px-6 py-3 text-sm font-medium transition ${
+                activeTab === 'history'
+                  ? 'text-emerald-600 dark:text-emerald-400 border-b-2 border-emerald-600 dark:border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-700/50'
+              }`}
+            >
+              History ({notifications.filter(n => n.is_sent).length})
+            </button>
+          </div>
+
+          {/* Clear History Button */}
+          {activeTab === 'history' && notifications.filter(n => n.is_sent).length > 0 && (
+            <div className="px-6 py-3 bg-gray-50 dark:bg-slate-700/50 border-b border-gray-200 dark:border-slate-700 flex justify-end">
+              <button
+                onClick={handleClearHistory}
+                disabled={clearingHistory}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium transition text-sm"
+              >
+                {clearingHistory ? 'Clearing...' : 'Clear History'}
+              </button>
+            </div>
+          )}
+
           {/* Notifications List */}
           <div className="divide-y divide-gray-200 dark:divide-slate-700">
-            {notifications.length === 0 ? (
-              <div className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
-                No notifications yet
-              </div>
-            ) : (
-              notifications.map((notification, index) => (
+            {(() => {
+              const filteredNotifications = notifications.filter(n => 
+                activeTab === 'pending' ? !n.is_sent : n.is_sent
+              );
+
+              if (filteredNotifications.length === 0) {
+                return (
+                  <div className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                    {activeTab === 'pending' 
+                      ? 'No pending notifications' 
+                      : 'No notification history'}
+                  </div>
+                );
+              }
+
+              return filteredNotifications.map((notification, index) => (
                 <motion.div
                   key={notification.id}
                   initial={{ opacity: 0, y: 10 }}
@@ -418,7 +505,7 @@ export function AdminDashboard() {
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-3 flex-1">
                       <span
-                        className={`px-3 py-1 rounded-full text-xs font-medium ${
+                        className={`px-3 py-1 text-xs font-medium ${
                           notificationType[notification.notification_type as keyof typeof notificationType]?.color ||
                           notificationType.info.color
                         }`}
@@ -430,15 +517,24 @@ export function AdminDashboard() {
                         {notification.title}
                       </h3>
                     </div>
-                    <div className="text-right">
+                    <div className="flex items-center gap-3">
                       {notification.is_sent ? (
-                        <div className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">
+                        <div className="text-sm text-emerald-600 dark:text-emerald-400 font-medium px-3 py-1 bg-emerald-50 dark:bg-emerald-900/20">
                           Sent
                         </div>
                       ) : (
-                        <div className="text-sm text-gray-500 dark:text-gray-400">
-                          Pending
-                        </div>
+                        <>
+                          <div className="text-sm text-orange-600 dark:text-orange-400 font-medium px-3 py-1 bg-orange-50 dark:bg-orange-900/20">
+                            Pending
+                          </div>
+                          <button
+                            onClick={() => handleSendNotification(notification.id)}
+                            disabled={sendingIds.has(notification.id)}
+                            className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition"
+                          >
+                            {sendingIds.has(notification.id) ? 'Sending...' : 'Send Now'}
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -453,10 +549,50 @@ export function AdminDashboard() {
                     )}
                   </div>
                 </motion.div>
-              ))
-            )}
+              ));
+            })()}
           </div>
         </motion.div>
+      </div>
+
+      {/* Toast Notifications */}
+      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
+        <AnimatePresence>
+          {toasts.map(toast => (
+            <motion.div
+              key={toast.id}
+              initial={{ opacity: 0, x: 100, y: 0 }}
+              animate={{ opacity: 1, x: 0, y: 0 }}
+              exit={{ opacity: 0, x: 100 }}
+              className={`px-6 py-4 shadow-lg border min-w-[300px] max-w-md ${
+                toast.type === 'success'
+                  ? 'bg-emerald-50 dark:bg-emerald-900/90 border-emerald-200 dark:border-emerald-700 text-emerald-800 dark:text-emerald-100'
+                  : toast.type === 'error'
+                  ? 'bg-red-50 dark:bg-red-900/90 border-red-200 dark:border-red-700 text-red-800 dark:text-red-100'
+                  : 'bg-blue-50 dark:bg-blue-900/90 border-blue-200 dark:border-blue-700 text-blue-800 dark:text-blue-100'
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                {toast.type === 'success' && (
+                  <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                )}
+                {toast.type === 'error' && (
+                  <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                )}
+                {toast.type === 'info' && (
+                  <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                  </svg>
+                )}
+                <p className="flex-1 font-medium text-sm">{toast.message}</p>
+              </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </div>
     </div>
   );

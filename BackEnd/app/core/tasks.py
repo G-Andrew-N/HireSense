@@ -3,6 +3,7 @@ import logging
 from datetime import date, timedelta
 
 from celery import shared_task
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.mail import EmailMessage, send_mail
 from django.db.models import Q
@@ -1315,11 +1316,11 @@ def send_notification_to_users(notification_id):
         try:
             email_message = EmailMessage(
                 subject=subject,
-                body=notification.message,
+                body=html_message,
                 from_email=settings.DEFAULT_FROM_EMAIL,
-                to=[user.email],
-                html_message=html_message
+                to=[user.email]
             )
+            email_message.content_subtype = "html"  # Set content type to HTML
             email_message.send()
             sent_count += 1
             

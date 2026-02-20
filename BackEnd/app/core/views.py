@@ -951,6 +951,19 @@ class SystemNotificationViewSet(ModelViewSet):
             status=status.HTTP_200_OK
         )
     
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated, IsSuperUser])
+    def clear_history(self, request):
+        """Clear notification history (delete all sent notifications)."""
+        deleted_count = SystemNotification.objects.filter(is_sent=True).delete()[0]
+        
+        return Response(
+            {
+                'detail': f'Deleted {deleted_count} notification(s) from history',
+                'deleted_count': deleted_count
+            },
+            status=status.HTTP_200_OK
+        )
+    
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated, IsSuperUser])
     def admin_stats(self, request):
         """Get admin dashboard statistics."""
