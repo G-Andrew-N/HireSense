@@ -28,23 +28,23 @@ export function Root() {
 
   return (
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
-      <div className="flex h-screen bg-gray-50 dark:bg-gray-950">
-        {/* Desktop Sidebar */}
-        <div className="hidden lg:block w-64 flex-shrink-0">
-          <Sidebar />
-        </div>
-        
-        {/* Mobile Navigation */}
-        <MobileNav />
-        
-        <div className="flex-1 flex flex-col overflow-hidden pt-[57px] lg:pt-0">
-          <NotificationProvider>
+      <NotificationProvider>
+        <div className="flex h-screen bg-gray-50 dark:bg-gray-950">
+          {/* Desktop Sidebar */}
+          <div className="hidden lg:block w-64 flex-shrink-0">
+            <Sidebar />
+          </div>
+          
+          {/* Mobile Navigation */}
+          <MobileNav />
+          
+          <div className="flex-1 flex flex-col overflow-hidden pt-[57px] lg:pt-0">
             <ScanProvider>
               <Outlet />
             </ScanProvider>
-          </NotificationProvider>
+          </div>
         </div>
-      </div>
+      </NotificationProvider>
     </ThemeProvider>
   );
 }
