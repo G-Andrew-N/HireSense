@@ -78,6 +78,7 @@ export function JobMatches() {
   const [loading, setLoading] = useState(true);
   const [requiresResume, setRequiresResume] = useState(false);
   const [filter, setFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [markingId, setMarkingId] = useState<number | null>(null);
   const [hasAttemptedScan, setHasAttemptedScan] = useState(false);
   const mountedRef = useRef(true);
@@ -282,6 +283,15 @@ export function JobMatches() {
       if (filter === "medium") return score >= 70 && score < 85;
       if (filter === "low") return score < 70;
       return true;
+    })
+    .filter((job) => {
+      // Apply search filter
+      if (!searchQuery.trim()) return true;
+      const query = searchQuery.toLowerCase();
+      const matchesTitle = job.title?.toLowerCase().includes(query) ?? false;
+      const matchesCompany = job.company?.toLowerCase().includes(query) ?? false;
+      const matchesLocation = job.location?.toLowerCase().includes(query) ?? false;
+      return matchesTitle || matchesCompany || matchesLocation;
     });  
 
   const jobsBySource = filteredJobs.reduce<Record<string, typeof filteredJobs>>((acc, job) => {
@@ -384,6 +394,8 @@ export function JobMatches() {
         title="Job Matches"
         subtitle="AI-powered job recommendations based on your resume"
         showSearch={true}
+        searchValue={searchQuery}
+        onSearchChange={setSearchQuery}
       />
 
       <div className="flex-1 p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 pb-20 lg:pb-8">

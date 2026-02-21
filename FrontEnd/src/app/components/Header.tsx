@@ -12,6 +12,8 @@ interface HeaderProps {
   title: string;
   subtitle?: string;
   showSearch?: boolean;
+  searchValue?: string;
+  onSearchChange?: (value: string) => void;
 }
 
 interface AdminNotification {
@@ -19,7 +21,7 @@ interface AdminNotification {
   is_read: boolean;
 }
 
-export function Header({ title, subtitle, showSearch = false }: HeaderProps) {
+export function Header({ title, subtitle, showSearch = false, searchValue = "", onSearchChange }: HeaderProps) {
   const navigate = useNavigate();
   const { notifications } = useNotification();
   const [adminNotifications, setAdminNotifications] = useState<AdminNotification[]>([]);
@@ -78,6 +80,8 @@ export function Header({ title, subtitle, showSearch = false }: HeaderProps) {
             <Input 
               placeholder="Search jobs..." 
               className="pl-10 bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700"
+              value={searchValue}
+              onChange={(e) => onSearchChange?.(e.target.value)}
             />
           </div>
         )}
