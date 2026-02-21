@@ -378,7 +378,12 @@ def _get_current_resume(user):
     return Resume.objects.filter(user=user).order_by("-uploaded_at").first()
 
 
-def _fetch_indeed_jobs_for_user(user_id: int, query_override: str | None = None, auto_trigger_analysis: bool = True) -> dict:
+def _fetch_indeed_jobs_for_user(
+    user_id: int,
+    query_override: str | None = None,
+    auto_trigger_analysis: bool = True,
+    max_total_results: int | None = None,
+) -> dict:
     """
     Fetch jobs with profession-aware query using curated sources.
     Complements the bulk scan with targeted fetching based on resume profession.
@@ -445,7 +450,7 @@ def _fetch_indeed_jobs_for_user(user_id: int, query_override: str | None = None,
         logger.info("Not adding tech-only sources for user %s (industry='%s', query='%s')", user_id, industry or "unknown", query)
     
     total_stored = 0
-    MIN_RESULTS_TO_STOP = 5  # Stop once we have decent results
+    min_results_to_stop = max_total_results if max_total_results else 5
     
     for c in candidates:
         try:
@@ -472,7 +477,7 @@ def _fetch_indeed_jobs_for_user(user_id: int, query_override: str | None = None,
                            stored, source_name, user_id, result.fetched_count, query)
             
             # Early termination: if we have enough results, stop searching
-            if total_stored >= MIN_RESULTS_TO_STOP:
+            if total_stored >= min_results_to_stop:
                 logger.info("Got %d profession-aware results, stopping search", total_stored)
                 break
         except Exception as e:
@@ -614,7 +619,12 @@ def _run_match_analysis_chunk(user_id: int, chunk_size: int = 3) -> dict:
     if not has_recent:
         profession = get_profession_for_job_search(resume_text)
         # Don't auto-trigger since we're already in a chunk analysis run
-        fetch_result = _fetch_indeed_jobs_for_user(user_id, query_override=profession, auto_trigger_analysis=False)
+        fetch_result = _fetch_indeed_jobs_for_user(
+            user_id,
+            query_override=profession,
+            auto_trigger_analysis=False,
+            max_total_results=chunk_size,
+        )
         if fetch_result.get("stored", 0) == 0 and _is_developer_profession(profession):
             _fetch_wwr_programming_jobs()
     # Match against jobs from all enabled sources
@@ -643,7 +653,7 @@ def _run_match_analysis_chunk(user_id: int, chunk_size: int = 3) -> dict:
 
         job_desc = f"Job title: {jp.title or 'N/A'}\n\n{jp.description or ''}"
         match_result = match_resume_to_job(resume_text, job_desc)
-        if not match_result or match_result["match_score"] < 25:
+        if not match_result:
             if groq_pace_seconds:
                 time.sleep(groq_pace_seconds)
             continue

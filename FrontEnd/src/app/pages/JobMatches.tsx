@@ -23,7 +23,6 @@ import {
   getJobMatches,
   getJobMatchesWithPending,
   markJobMatchApplied,
-  triggerJobScan,
   triggerMatchAnalysisChunk,
   type JobMatch,
 } from "../../lib/api";
@@ -78,10 +77,6 @@ export function JobMatches() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [markingId, setMarkingId] = useState<number | null>(null);
-  const [pendingCount, setPendingCount] = useState(0);
-  const [scanInFlight, setScanInFlight] = useState(false);
-  const scanStartCountRef = useRef(0);
-  const scanInFlightRef = useRef(false);
   const mountedRef = useRef(true);
   
   // Restore scan start time from localStorage if scanning is in progress
@@ -102,28 +97,9 @@ export function JobMatches() {
       .then((response) => { 
         console.log('[JobMatches] got response:', response);
         if (mountedRef.current) {
-          const nextPending = response.pending_count ?? 0;
           const nextCount = response.results.length;
           setMatches(response.results);
-          setPendingCount(nextPending);
-          console.log('[JobMatches] updated state - matches:', nextCount, 'pending:', response.pending_count);
-          
-          // Clear scanInFlight when analysis is complete (pendingCount reaches 0)
-          if (scanInFlightRef.current && nextPending === 0) {
-            scanInFlightRef.current = false;
-            setScanInFlight(false);
-            // Clear the pending scan flag when scan completes
-            localStorage.removeItem("hiresense:scan-pending");
-            localStorage.removeItem("hiresense:scan-start-time");  // Clear start time
-            
-            // Notify user if scan completed but no new qualifying matches were found
-            if (nextCount === scanStartCountRef.current) {
-              toast.info("Scan complete. No new qualifying job matches found.");
-            } else {
-              const newMatches = nextCount - scanStartCountRef.current;
-              toast.success(`Found ${newMatches} new job match${newMatches === 1 ? '' : 'es'}!`);
-            }
-          }
+          console.log('[JobMatches] updated state - matches:', nextCount, 'pending: 0');
         }
       })
       .catch((err) => {
@@ -146,50 +122,38 @@ export function JobMatches() {
   }, []);
 
   const handleScan = useCallback(async () => {
-    scanStartCountRef.current = matches.length;
-    scanInFlightRef.current = true;
-    setScanInFlight(true);
     setScanning(true);
-    const now = Date.now();
-    scanStartTimeRef.current = now;  // Record scan start time
+
+    toast.info("Searching and analyzing 2 jobs...");
     try {
-      localStorage.setItem("hiresense:scan-start-time", now.toString());
-    } catch {}
-    
-    toast.info("Scanning for new jobs for your profession...");
-    try {
-      // Trigger fetch of new jobs (backend will auto-trigger analysis)
-      const result = await triggerJobScan(true);
-      if (result.total_stored === 0) {
-        toast.info("No new jobs found for your profession. Try again later.");
-        scanInFlightRef.current = false;
-        setScanInFlight(false);
-        setScanning(false);
-        scanStartTimeRef.current = null;
-        localStorage.removeItem("hiresense:scan-pending");  // Clear flag on completion
-        localStorage.removeItem("hiresense:scan-start-time");
-        return;
+      const result = await triggerMatchAnalysisChunk(2);
+      const newMatches = result.matches ?? [];
+      if (newMatches.length === 0) {
+        toast.info("No new jobs found. Try again later.");
+      } else {
+        setMatches((prev) => {
+          const existing = new Set(prev.map((m) => m.id));
+          const merged = [...prev];
+          for (const match of newMatches) {
+            if (!existing.has(match.id)) {
+              merged.push(match);
+            }
+          }
+          return merged;
+        });
+        toast.success(`Added ${newMatches.length} job${newMatches.length === 1 ? "" : "s"}.`);
       }
-      // Load pending/analyzing jobs immediately
-      await load();
-      // Keep scanning=true to enable polling every 3s for updates
     } catch (err: unknown) {
       const errorDetail = (err as { body?: { detail?: string } })?.body?.detail;
-      // Don't show error for benign cases like "no new jobs"
-      if (errorDetail?.toLowerCase().includes("no new jobs") || errorDetail?.toLowerCase().includes("try again later")) {
-        toast.info(errorDetail);
-      } else {
-        const msg = errorDetail ?? "Scan failed";
-        toast.error(msg);
-      }
-      scanInFlightRef.current = false;
-      setScanInFlight(false);
+      const msg = errorDetail ?? "Search failed";
+      toast.error(msg);
+    } finally {
       setScanning(false);
       scanStartTimeRef.current = null;
-      localStorage.removeItem("hiresense:scan-pending");  // Clear flag on error
+      localStorage.removeItem("hiresense:scan-pending");
       localStorage.removeItem("hiresense:scan-start-time");
     }
-  }, [setScanning, load, matches.length]);
+  }, [setScanning, matches.length]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -246,38 +210,13 @@ export function JobMatches() {
   // When returning to this page while scan is in progress, poll for new matches
   useEffect(() => {
     if (!isScanning) return;
-    
-    const scanElapsed = scanStartTimeRef.current 
-      ? (Date.now() - scanStartTimeRef.current) / 1000 
-      : 999;  // If no start time, assume old scan
-    
-    const hasSeenJobs = matches.length > 0;  // Have we seen ANY jobs yet (analyzing or matched)?
-    const MIN_SCAN_TIME = 30;  // Keep scanning for at least 30 seconds
-    
-    // Stop scanning only if:
-    // 1. We've waited at least MIN_SCAN_TIME seconds AND
-    // 2. Either we've seen jobs and they're all analyzed (pending=0), OR we've waited 90+ seconds
-    const shouldStop = 
-      scanElapsed >= MIN_SCAN_TIME && 
-      (hasSeenJobs && !scanInFlight && pendingCount === 0 || scanElapsed >= 90);
-    
-    if (shouldStop) {
-      setScanning(false);
-      scanStartTimeRef.current = null;
-      try {
-        localStorage.removeItem("hiresense:scan-start-time");
-      } catch {}
-      if (scanElapsed >= 90 && !hasSeenJobs) {
-        toast.info("Job scan timed out. Try scanning again in a moment.");
-      }
-      return;
-    }
-    
-    const id = setInterval(() => {
-      load();
-    }, 3000);
-    return () => clearInterval(id);
-  }, [isScanning, scanInFlight, pendingCount, matches.length, load, setScanning]);
+
+    setScanning(false);
+    scanStartTimeRef.current = null;
+    try {
+      localStorage.removeItem("hiresense:scan-start-time");
+    } catch {}
+  }, [isScanning, setScanning]);
 
   const filteredJobs = matches
     .map(toDisplay)
@@ -421,31 +360,22 @@ export function JobMatches() {
 
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button onClick={handleScan} disabled={isScanning || pendingCount > 0}>
+              <Button onClick={handleScan} disabled={isScanning}>
                 {isScanning ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : pendingCount > 0 ? (
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 ) : (
                   <TrendingUp className="w-4 h-4 mr-2" />
                 )}
-                {isScanning ? "Scanning..." : pendingCount > 0 ? "Analyzing jobs..." : "Scan for New Jobs"}
+                {isScanning ? "Analyzing..." : "Load 2 More Jobs"}
               </Button>
             </TooltipTrigger>
-            {(isScanning || pendingCount > 0) && (
+            {isScanning && (
               <TooltipContent side="top">
-                {pendingCount > 0 ? `Please wait for ${pendingCount} job${pendingCount !== 1 ? 's' : ''} to finish analyzing before scanning for new jobs` : "Scanning for jobs..."}
+                Searching and analyzing 2 jobs...
               </TooltipContent>
             )}
           </Tooltip>
         </motion.div>
-
-        {scanInFlight && pendingCount === 0 && (
-          <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-700">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            <span className="text-sm">Scanning for new jobs...</span>
-          </div>
-        )}
 
         {(loading && matches.length === 0) ? (
           <div className="py-12 text-center">

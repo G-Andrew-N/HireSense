@@ -407,7 +407,7 @@ export async function triggerMatchAnalysis(sync = true): Promise<{ task_id?: str
 
 /** Chunked match analysis: process a few jobs and return new matches. For progressive rendering. */
 export async function triggerMatchAnalysisChunk(
-  chunkSize = 3
+  chunkSize = 2
 ): Promise<{ matches: JobMatch[]; has_more: boolean }> {
   const url = `/jobs/run-match-analysis/?sync=true&chunk=${chunkSize}`;
   const data = await apiRequest<{ matches: JobMatch[]; has_more: boolean }>(url, { method: 'POST' });

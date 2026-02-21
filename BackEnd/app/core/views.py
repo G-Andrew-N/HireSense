@@ -369,32 +369,28 @@ class JobFullAnalysisView(APIView):
 
 
 class JobScanView(APIView):
-    """POST /api/jobs/scan/ - Trigger job site scan. Use ?sync=true to run synchronously (no Celery)."""
+    """POST /api/jobs/scan/ - Trigger job site scan synchronously (no Celery)."""
 
     permission_classes = [IsAuthenticated]
     throttle_classes = [ScanThrottle]
 
     def post(self, request):
-        from .tasks import scan_all_job_sites_limited, _run_scan_all_limited, _fetch_indeed_jobs_for_user, _fetch_indeed_jobs_for_user_async
+        from .tasks import _run_scan_all_limited, _fetch_indeed_jobs_for_user
 
-        if request.query_params.get("sync", "").lower() in ("true", "1", "yes"):
-            # Sync mode: scan all sources with per-source limits
-            result = _run_scan_all_limited()
-            # Also fetch profession-aware jobs with auto-trigger for analysis
-            user_fetch_result = _fetch_indeed_jobs_for_user(request.user.id, auto_trigger_analysis=True)
-            result["user_fetch"] = user_fetch_result
-            return Response({"detail": "Scan completed.", **result})
-        # Async mode: queue both tasks
-        task = scan_all_job_sites_limited.delay()
-        user_task = _fetch_indeed_jobs_for_user_async.delay(request.user.id)
-        return Response(
-            {
-                "detail": "Scan started.",
-                "scan_task_id": task.id,
-                "user_fetch_task_id": user_task.id,
-            },
-            status=status.HTTP_202_ACCEPTED,
+        limit_param = request.query_params.get("limit")
+        limit = int(limit_param) if limit_param and str(limit_param).isdigit() else 2
+        limit = min(max(limit, 1), 5)
+
+        # Sync mode only: scan all sources with per-source limits
+        result = _run_scan_all_limited(max_results_per_source=2, max_total=limit)
+        # Fetch profession-aware jobs without auto-triggering analysis
+        user_fetch_result = _fetch_indeed_jobs_for_user(
+            request.user.id,
+            auto_trigger_analysis=False,
+            max_total_results=limit,
         )
+        result["user_fetch"] = user_fetch_result
+        return Response({"detail": "Scan completed.", **result})
 
 
 class JobScanSiteView(APIView):
@@ -404,49 +400,45 @@ class JobScanSiteView(APIView):
     throttle_classes = [ScanThrottle]
 
     def post(self, request, site_id: int):
-        from .tasks import scan_job_site
+        from .tasks import _run_scan_site_limited
 
-        task = scan_job_site.delay(site_id)
-        return Response(
-            {"detail": "Scan started.", "task_id": task.id},
-            status=status.HTTP_202_ACCEPTED,
-        )
+        result = _run_scan_site_limited(site_id, max_results=2)
+        if result.get("error"):
+            return Response({"detail": result["error"]}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"detail": "Scan completed.", **result})
 
 
 class JobMatchAnalysisTriggerView(APIView):
     """
     POST /api/jobs/run-match-analysis/
-    - ?sync=true: run without Celery
-    - ?sync=true&chunk=3: process 3 jobs per request, return matches for progressive rendering
+    - Processes 2 jobs per request by default for manual, incremental loading
     """
 
     permission_classes = [IsAuthenticated]
     throttle_classes = [AIMatchThrottle]
 
     def post(self, request):
-        from .tasks import run_match_analysis_for_user, _run_match_analysis_for_user, _run_match_analysis_chunk
+        from .tasks import _run_match_analysis_chunk, _run_scan_all_limited, _fetch_indeed_jobs_for_user
         from .serializers import JobMatchSerializer
 
         chunk_param = request.query_params.get("chunk")
-        chunk_size = int(chunk_param) if chunk_param and str(chunk_param).isdigit() else 0
-        chunk_size = min(max(chunk_size, 1), 5) if chunk_size else 0
+        chunk_size = int(chunk_param) if chunk_param and str(chunk_param).isdigit() else 2
+        chunk_size = min(max(chunk_size, 1), 5)
 
-        if request.query_params.get("sync", "").lower() in ("true", "1", "yes"):
-            if chunk_size:
-                result = _run_match_analysis_chunk(request.user.id, chunk_size)
-                if "error" in result:
-                    return Response({"detail": result["error"]}, status=status.HTTP_400_BAD_REQUEST)
-                data = JobMatchSerializer(result["matches"], many=True).data
-                return Response({"matches": data, "has_more": result["has_more"]})
-            result = _run_match_analysis_for_user(request.user.id)
-            if "error" in result:
-                return Response({"detail": result["error"]}, status=status.HTTP_400_BAD_REQUEST)
-            return Response({"detail": "Match analysis completed.", **result})
-        task = run_match_analysis_for_user.delay(request.user.id)
-        return Response(
-            {"detail": "Match analysis started.", "task_id": task.id},
-            status=status.HTTP_202_ACCEPTED,
+        # Step 1: scan for fresh jobs (stop as soon as we have chunk_size results)
+        _run_scan_all_limited(max_results_per_source=2, max_total=chunk_size)
+        _fetch_indeed_jobs_for_user(
+            request.user.id,
+            auto_trigger_analysis=False,
+            max_total_results=chunk_size,
         )
+
+        # Step 2: analyze up to chunk_size jobs and return them
+        result = _run_match_analysis_chunk(request.user.id, chunk_size)
+        if "error" in result:
+            return Response({"detail": result["error"]}, status=status.HTTP_400_BAD_REQUEST)
+        data = JobMatchSerializer(result["matches"], many=True).data
+        return Response({"matches": data, "has_more": result["has_more"]})
 
 
 # ----- Resume -----
@@ -511,46 +503,20 @@ class ResumeViewSet(ModelViewSet):
         except Exception as e:
             RESUME_LOG.warning("Failed to clear previous job matches for user %s: %s", instance.user_id, e)
 
-        # Enqueue all processing asynchronously to return quickly and avoid worker timeout
-        self.match_analysis = {"started": False}
+        # Process resume synchronously (no background workers on Render free tier)
+        self.match_analysis = {"started": False, "mode": "manual"}
         try:
-            from .tasks import (
-                parse_resume_async,
-                run_match_analysis_for_user,
-                generate_insights_for_user,
-                scan_jobs_after_resume_upload,
-            )
-        except Exception as e:
-            RESUME_LOG.warning("Could not import async tasks: %s", e)
-            self.match_analysis = {"started": False, "reason": "import_failed", "error": str(e)}
-            return
+            from .resume_pipeline import process_resume_file
 
-        # Chain tasks: Parse resume → Generate insights → Scan jobs → Match analysis
-        # This ensures we return immediately without blocking on PDF parsing or AI calls
-        try:
-            # 1. Parse resume (PDF extraction + content parsing)
-            parse_task = parse_resume_async.delay(instance.id)
-            
-            # 2. Generate insights after parsing completes
-            insight_task = generate_insights_for_user.delay(instance.user_id)
-            
-            # 3. Scan jobs from all sources
-            scan_task = scan_jobs_after_resume_upload.delay(instance.user_id)
-            
-            # 4. Run match analysis
-            match_task = run_match_analysis_for_user.delay(instance.user_id)
-            
-            self.match_analysis = {
-                "started": True,
-                "async": True,
-                "parse_task_id": getattr(parse_task, "id", None),
-                "insights_task_id": getattr(insight_task, "id", None),
-                "scan_task_id": getattr(scan_task, "id", None),
-                "match_task_id": getattr(match_task, "id", None),
-            }
+            result = process_resume_file(instance)
+            instance.raw_text = result.raw_text
+            content = dict(result.parsed_content)
+            if result.structure_hints:
+                content["structure_hints"] = result.structure_hints
+            instance.parsed_content = content
+            instance.save(update_fields=["raw_text", "parsed_content"])
         except Exception as e:
-            RESUME_LOG.warning("Could not enqueue async processing tasks: %s", e)
-            self.match_analysis = {"started": False, "reason": "enqueue_failed", "error": str(e)}
+            RESUME_LOG.warning("Resume parsing failed during upload: %s", e)
 
     def perform_destroy(self, instance):
         if instance.file:
@@ -694,135 +660,33 @@ class JobMatchViewSet(ModelViewSet):
 
     def get_queryset(self):
         from .tasks import _get_enabled_job_source_names
-        # Show matches from all enabled job sources, score >= 25 only
+        # Show matches from all enabled job sources
         enabled_sources = _get_enabled_job_source_names()
         return (
             JobMatch.objects.filter(
-                user=self.request.user, 
+                user=self.request.user,
                 source__in=enabled_sources,
-                match_score__gte=25  # Only show matches with score >= 25
             )
             .order_by("-match_score", "-created_at")
         )
 
     @action(detail=False, methods=["get"])
     def with_pending(self, request):
-        """Return both matched jobs and pending jobs (analyzing). Pending jobs have status='analyzing'."""
+        """Return matched jobs only (manual flow has no background pending jobs)."""
         from .tasks import _get_enabled_job_source_names
-        from .tasks import _get_current_resume
-        from .resume_utils import get_job_search_query
         from rest_framework.response import Response
-        import logging
-
-        logger = logging.getLogger(__name__)
         enabled_sources = _get_enabled_job_source_names()
         
-        # Get matched jobs (score >= 25 only)
+        # Get matched jobs
         matched = JobMatch.objects.filter(
-            user=request.user, 
-            source__in=enabled_sources,
-            match_score__gte=25  # Only show good matches
-        ).order_by("-match_score", "-created_at")
-        
-        # Find pending jobs: recently fetched JobPostings that DON'T have a JobMatch yet
-        # These are the jobs queued for analysis but not yet processed by the Celery task
-        from django.utils import timezone
-        from datetime import timedelta
-        
-        recent_cutoff = timezone.now() - timedelta(minutes=10)  # Look at jobs fetched in last 10 minutes
-        
-        # Get all recent job postings from enabled sources
-        recent_postings = JobPosting.objects.filter(
-            source__in=enabled_sources,
-            fetched_at__gte=recent_cutoff
-        ).order_by("-fetched_at")
-        
-        logger.info(f"with_pending: enabled_sources={enabled_sources}, recent_postings_count={recent_postings.count()}")
-        
-        # Get IDs of jobs that have already been analyzed (have a JobMatch record)
-        analyzed_posting_ids = JobMatch.objects.filter(
             user=request.user,
-            job_posting__in=recent_postings
-        ).values_list('job_posting_id', flat=True)
-        
-        # Pending jobs = recent postings that DON'T have a JobMatch record yet
-        pending_postings = recent_postings.exclude(id__in=analyzed_posting_ids)
-        
-        logger.info(f"with_pending: pending_jobs_count={pending_postings.count()}, analyzed_count={len(analyzed_posting_ids)}")
-        
-        # Log pending jobs for debugging
-        for jp in pending_postings[:5]:  # Log first 5
-            logger.info(f"  Pending job: id={jp.id}, source={jp.source}, title={jp.title}")
-        
-        # Serialize matched jobs
+            source__in=enabled_sources,
+        ).order_by("-match_score", "-created_at")
         matched_data = JobMatchSerializer(matched, many=True).data
-        
-        # Filter pending postings to the user's resume query to avoid irrelevant analyzing items
-        resume = _get_current_resume(request.user)
-        query = get_job_search_query(resume) if resume else "jobs"
-        keywords = [w.lower() for w in query.split() if len(w) > 2]
-
-        # Show pending jobs filtered by profession, or show top general tech jobs if no profession yet
-        if keywords and query.lower() != "jobs":
-            filtered_pending = []
-            for posting in pending_postings:
-                title_lower = (posting.title or '').lower()
-                desc_lower = (posting.description or '')[:500].lower()  # First 500 chars of description
-                
-                # Count how many keywords match (prioritize title matches)
-                title_matches = sum(1 for k in keywords if k in title_lower)
-                desc_matches = sum(1 for k in keywords if k in desc_lower)
-                
-                # Require: at least 1 keyword in title OR 2+ keywords in description
-                # This prevents weak matches like "real-time" matching "Real Estate Agent"
-                if title_matches >= 1 or desc_matches >= 2:
-                    filtered_pending.append(posting)
-            
-            logger.info(f"with_pending: filtered_pending_count={len(filtered_pending)} (from {pending_postings.count()} total)")
-        else:
-            # Show top 5 general tech/developer jobs when profession is unknown (resume still parsing)
-            # This provides some initial content while background parsing completes
-            general_tech_keywords = ['engineer', 'developer', 'software', 'programmer', 'tech', 'AI', 'full-stack', 'backend', 'frontend']
-            filtered_pending = []
-            for posting in pending_postings:
-                title_lower = (posting.title or '').lower()
-                if any(keyword in title_lower for keyword in general_tech_keywords):
-                    filtered_pending.append(posting)
-                    if len(filtered_pending) >= 5:  # Limit to 5 jobs
-                        break
-            
-            logger.info(f"with_pending: showing {len(filtered_pending)} general tech jobs while resume parsing (no profession keywords yet)")
-
-        # Convert pending postings to a match-like format with status='analyzing'
-        pending_data = []
-        for posting in filtered_pending:
-            pending_data.append({
-                "id": None,  # No JobMatch ID yet
-                "user": request.user.id,
-                "job_posting": posting.id,
-                "title": posting.title,
-                "company": posting.company,
-                "location": posting.location,
-                "salary": posting.salary,
-                "posted_date": posting.posted_date,
-                "external_url": posting.external_url,
-                "logo": posting.logo,
-                "source": posting.source,
-                "match_score": None,
-                "interview_probability": None,
-                "skills": [],
-                "missing_skills": [],
-                "status": "analyzing",  # Mark as currently being analyzed
-                "created_at": posting.fetched_at,
-            })
-        
-        # Combine: pending first (so user sees "loading" jobs at top), then matched
-        combined = pending_data + matched_data
-        
         return Response({
-            "results": combined,
-            "count": len(combined),
-            "pending_count": len(pending_data),
+            "results": matched_data,
+            "count": len(matched_data),
+            "pending_count": 0,
             "matched_count": len(matched_data),
         })
 
