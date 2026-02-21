@@ -14,6 +14,21 @@ export interface ApiError {
   [key: string]: unknown;
 }
 
+const PUBLIC_AUTH_PATHS = [
+  "/auth/register/",
+  "/auth/login/",
+  "/auth/refresh/",
+  "/auth/password-reset/",
+  "/auth/password-reset/confirm/",
+  "/auth/logout/",
+];
+
+function isPublicAuthPath(path: string): boolean {
+  const rawPath = path.startsWith("http") ? new URL(path).pathname : path;
+  const normalized = rawPath.startsWith("/api") ? rawPath.slice(4) : rawPath;
+  return PUBLIC_AUTH_PATHS.some((publicPath) => normalized.startsWith(publicPath));
+}
+
 async function getToken(): Promise<string | null> {
   return localStorage.getItem('access');
 }
@@ -57,7 +72,7 @@ export async function apiRequest<T>(
   const headers: HeadersInit = {
     ...(options.headers as Record<string, string>),
   };
-  if (token && !headers['Authorization']) {
+  if (token && !headers['Authorization'] && !isPublicAuthPath(path)) {
     headers['Authorization'] = `Bearer ${token}`;
   }
   if (!(options.body instanceof FormData) && !headers['Content-Type']) {
@@ -70,7 +85,7 @@ export async function apiRequest<T>(
   let res = await fetch(url, { ...options, headers });
 
   // Retry once with refreshed token on 401
-  if (res.status === 401 && token) {
+  if (res.status === 401 && token && !isPublicAuthPath(path)) {
     const newToken = await refreshAccessToken();
     if (newToken) {
       headers['Authorization'] = `Bearer ${newToken}`;
