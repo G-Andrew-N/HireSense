@@ -164,7 +164,8 @@ export function Settings() {
   };
 
   const visibleSources = useMemo(() => {
-    if (activeSourceNames.length === 0) return [];
+    if (jobSources.length === 0) return [];
+    if (activeSourceNames.length === 0) return jobSources;
     const activeSet = new Set(activeSourceNames);
     return jobSources.filter((source) => activeSet.has(source.name));
   }, [activeSourceNames, jobSources]);
@@ -234,7 +235,11 @@ export function Settings() {
                       </div>
                     ))
                   ) : (
-                    <p className="text-sm text-gray-500">No job sources have returned results yet</p>
+                    <p className="text-sm text-gray-500">
+                      {jobSources.length === 0
+                        ? "No job sources are configured yet"
+                        : "No job sources have returned results yet"}
+                    </p>
                   )}
                 </div>
               )}
