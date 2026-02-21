@@ -164,11 +164,27 @@ if USE_CLOUDINARY:
         "API_SECRET": os.getenv("CLOUDINARY_API_SECRET"),
     }
     DEFAULT_FILE_STORAGE = "cloudinary_storage.storage.MediaCloudinaryStorage"
+    STORAGES = {
+        "default": {
+            "BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage",
+        },
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        },
+    }
     MEDIA_URL = "https://res.cloudinary.com/{}/image/upload/".format(os.getenv("CLOUDINARY_CLOUD_NAME"))
 else:
     # Fallback to local storage for development
     MEDIA_URL = os.getenv("MEDIA_URL", "media/")
     MEDIA_ROOT = BASE_DIR / "media"
+    STORAGES = {
+        "default": {
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+        },
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        },
+    }
 
 # CORS
 CORS_ALLOWED_ORIGINS = [
