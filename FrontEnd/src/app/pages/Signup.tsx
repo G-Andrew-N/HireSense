@@ -24,9 +24,38 @@ export function Signup() {
   });
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+
+  // Comprehensive password validation
+  const validatePassword = (password: string) => {
+    return {
+      length: password.length >= 8,
+      uppercase: /[A-Z]/.test(password),
+      lowercase: /[a-z]/.test(password),
+      number: /[0-9]/.test(password),
+      special: /[!@#$%^&*(),.?":{}|<>_\-+=[\]\\/'`~;]/.test(password)
+    };
+  };
+
+  const passwordRequirements = validatePassword(formData.password);
+  const passwordStrength = Object.values(passwordRequirements).filter(Boolean).length;
+  const isPasswordValid = passwordStrength === 5;
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Validate terms acceptance
+    if (!termsAccepted) {
+      toast.error("Please agree to our Terms of Service and Privacy Policy to continue");
+      return;
+    }
+
+    // Validate password requirements
+    if (!isPasswordValid) {
+      toast.error("Please meet all password requirements");
+      return;
+    }
+
     if (formData.password !== formData.confirmPassword) {
       toast.error("Passwords do not match");
       return;
@@ -221,9 +250,34 @@ export function Signup() {
                   </button>
                 </div>
                 {formData.password && (
-                  <p className={`text-xs ${passwordStrength ? "text-green-600" : "text-orange-600"}`}>
-                    {passwordStrength ? "✓ Strong password" : "Password must be at least 8 characters"}
-                  </p>
+                  <div className="space-y-1.5 mt-2">
+                    <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Password requirements:</p>
+                    <div className="grid grid-cols-1 gap-1">
+                      <div className={`flex items-center gap-1.5 text-xs ${passwordRequirements.length ? "text-green-600 dark:text-green-400" : "text-gray-500 dark:text-gray-400"}`}>
+                        <span>{passwordRequirements.length ? "✓" : "○"}</span>
+                        <span>At least 8 characters</span>
+                      </div>
+                      <div className={`flex items-center gap-1.5 text-xs ${passwordRequirements.uppercase ? "text-green-600 dark:text-green-400" : "text-gray-500 dark:text-gray-400"}`}>
+                        <span>{passwordRequirements.uppercase ? "✓" : "○"}</span>
+                        <span>One uppercase letter (A-Z)</span>
+                      </div>
+                      <div className={`flex items-center gap-1.5 text-xs ${passwordRequirements.lowercase ? "text-green-600 dark:text-green-400" : "text-gray-500 dark:text-gray-400"}`}>
+                        <span>{passwordRequirements.lowercase ? "✓" : "○"}</span>
+                        <span>One lowercase letter (a-z)</span>
+                      </div>
+                      <div className={`flex items-center gap-1.5 text-xs ${passwordRequirements.number ? "text-green-600 dark:text-green-400" : "text-gray-500 dark:text-gray-400"}`}>
+                        <span>{passwordRequirements.number ? "✓" : "○"}</span>
+                        <span>One number (0-9)</span>
+                      </div>
+                      <div className={`flex items-center gap-1.5 text-xs ${passwordRequirements.special ? "text-green-600 dark:text-green-400" : "text-gray-500 dark:text-gray-400"}`}>
+                        <span>{passwordRequirements.special ? "✓" : "○"}</span>
+                        <span>One special character (!@#$%^&* etc.)</span>
+                      </div>
+                    </div>
+                    {isPasswordValid && (
+                      <p className="text-xs text-green-600 dark:text-green-400 font-medium mt-1">✓ Password meets all requirements</p>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -254,7 +308,8 @@ export function Signup() {
                   id="terms"
                   type="checkbox"
                   className="w-4 h-4 mt-1 text-emerald-600 border-gray-300 focus:ring-emerald-500"
-                  required
+                  checked={termsAccepted}
+                  onChange={(e) => setTermsAccepted(e.target.checked)}
                 />
                 <label htmlFor="terms" className="ml-2 text-sm text-gray-600 dark:text-gray-400">
                   I agree to the{" "}
