@@ -8,3 +8,23 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
+
+  - type: worker
+    name: hiresense-celery-worker
+    runtime: python
+    pythonVersion: 3.11.0
+    buildCommand: pip install -r ./requirements.txt
+    startCommand: python -m celery -A app worker --loglevel=info --pool=solo
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+
+  - type: worker
+    name: hiresense-celery-beat
+    runtime: python
+    pythonVersion: 3.11.0
+    buildCommand: pip install -r ./requirements.txt
+    startCommand: python -m celery -A app beat --loglevel=info
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0

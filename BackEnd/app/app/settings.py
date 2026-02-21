@@ -276,8 +276,8 @@ LOGGING = {
 # ============================================================================
 from celery.schedules import crontab
 
-CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://default:AS_-AAIncDI2MTEwZGU5YTMyMDE0OTkyYjE0YzkzZmZiMjc2ZjNiMnAyMTIyODY@relaxed-bison-12286.upstash.io:6379/0')
-CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', 'redis://default:AS_-AAIncDI2MTEwZGU5YTMyMDE0OTkyYjE0YzkzZmZiMjc2ZjNiMnAyMTIyODY@relaxed-bison-12286.upstash.io:6379/0')
+CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'rediss://default:AS_-AAIncDI2MTEwZGU5YTMyMDE0OTkyYjE0YzkzZmZiMjc2ZjNiMnAyMTIyODY@relaxed-bison-12286.upstash.io:6379/0')
+CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', 'rediss://default:AS_-AAIncDI2MTEwZGU5YTMyMDE0OTkyYjE0YzkzZmZiMjc2ZjNiMnAyMTIyODY@relaxed-bison-12286.upstash.io:6379/0')
 
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
