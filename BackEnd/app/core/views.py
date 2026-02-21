@@ -600,6 +600,47 @@ class ResumeViewSet(ModelViewSet):
             status=status.HTTP_200_OK,
         )
 
+    @action(detail=False, methods=["post"], url_path="test-celery")
+    def test_celery(self, request):
+        """Test endpoint to verify Celery worker is running and processing tasks."""
+        try:
+            from .tasks import test_celery as test_celery_task
+            from .tasks import parse_resume_async
+            
+            # Trigger test task
+            test_task = test_celery_task.delay()
+            
+            # Also get info about user's resumes that might need parsing
+            user_resumes = Resume.objects.filter(user=request.user).order_by('-uploaded_at')
+            resume_info = []
+            for resume in user_resumes[:5]:
+                has_text = bool(resume.raw_text)
+                has_parsed = bool(resume.parsed_content and isinstance(resume.parsed_content, dict) and resume.parsed_content.get('skills'))
+                is_parsing = bool(resume.parsed_content and isinstance(resume.parsed_content, dict) and resume.parsed_content.get('_parsing'))
+                
+                resume_info.append({
+                    'id': resume.id,
+                    'filename': resume.original_filename,
+                    'uploaded_at': resume.uploaded_at,
+                    'has_raw_text': has_text,
+                    'has_parsed_content': has_parsed,
+                    'is_currently_parsing': is_parsing,
+                })
+            
+            return Response({
+                "status": "success",
+                "message": "Test task queued successfully",
+                "test_task_id": getattr(test_task, "id", None),
+                "user_resumes": resume_info,
+                "note": "Check server logs for '🎉 CELERY WORKER IS ALIVE' message"
+            })
+        except Exception as e:
+            RESUME_LOG.exception("Failed to queue test task: %s", e)
+            return Response({
+                "status": "error",
+                "error": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
     @action(detail=True, methods=["get"])
     def download(self, request, pk=None):
         """Secure download: only the owning user can download."""
