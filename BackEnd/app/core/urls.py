@@ -37,4 +37,5 @@ urlpatterns = [
         views.PasswordResetConfirmView.as_view(),
         name="auth-password-reset-confirm",
     ),
+    path("auth/email-test/", views.EmailTestView.as_view(), name="auth-email-test"),
 ]

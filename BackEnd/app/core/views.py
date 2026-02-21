@@ -271,6 +271,31 @@ class PasswordResetConfirmView(APIView):
         return Response({"detail": "Password has been reset. You can log in with your new password."})
 
 
+class EmailTestView(APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [AuthRateThrottle]
+
+    def post(self, request):
+        email = request.user.email
+        if not email:
+            return Response(
+                {"detail": "No email is associated with this account."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        send_mail(
+            subject="HireSense: Test email",
+            message=(
+                "Hi,\n\n"
+                "This is a test email to confirm SMTP is configured correctly."
+                "\n\n— HireSense"
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[email],
+            fail_silently=False,
+        )
+        return Response({"detail": "Test email sent."})
+
+
 # ----- AI endpoints -----
 
 
