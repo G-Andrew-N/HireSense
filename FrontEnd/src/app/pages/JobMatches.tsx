@@ -22,6 +22,7 @@ import { useScan } from "../../lib/scan-context";
 import {
   getJobMatches,
   getJobMatchesWithPending,
+  getResumes,
   markJobMatchApplied,
   triggerMatchAnalysisChunk,
   type JobMatch,
@@ -75,6 +76,7 @@ export function JobMatches() {
   const { isScanning, setScanning } = useScan();
   const [matches, setMatches] = useState<JobMatch[]>([]);
   const [loading, setLoading] = useState(true);
+  const [requiresResume, setRequiresResume] = useState(false);
   const [filter, setFilter] = useState("all");
   const [markingId, setMarkingId] = useState<number | null>(null);
   const [hasAttemptedScan, setHasAttemptedScan] = useState(false);
@@ -90,39 +92,50 @@ export function JobMatches() {
     return ref;
   });
 
-  const load = useCallback(() => {
+  const load = useCallback(async () => {
     setLoading(true);
     console.log('[JobMatches] load() called');
-    // Use the new endpoint that shows both matched and pending (analyzing) jobs
-    return getJobMatchesWithPending()
-      .then((response) => { 
-        console.log('[JobMatches] got response:', response);
+    try {
+      const resumes = await getResumes();
+      const hasResume = Array.isArray(resumes) && resumes.length > 0;
+      if (!hasResume) {
         if (mountedRef.current) {
-          const nextCount = response.results.length;
-          setMatches(response.results);
-          console.log('[JobMatches] updated state - matches:', nextCount, 'pending: 0');
+          setRequiresResume(true);
+          setMatches([]);
         }
-      })
-      .catch((err) => {
-        console.error('[JobMatches] getJobMatchesWithPending failed:', err);
-        // Fallback to regular endpoint if new one isn't available
-        getJobMatches()
-          .then((data) => { 
-            if (mountedRef.current) setMatches(data);
-            console.log('[JobMatches] fallback succeeded');
-          })
-          .catch((e) => {
-            console.error('[JobMatches] fallback also failed:', e);
-            toast.error("Failed to load matches");
-          });
-      })
-      .finally(() => { 
-        console.log('[JobMatches] setting loading=false');
-        if (mountedRef.current) setLoading(false); 
-      });
+        return;
+      }
+      if (mountedRef.current) setRequiresResume(false);
+
+      // Use the new endpoint that shows both matched and pending (analyzing) jobs
+      const response = await getJobMatchesWithPending();
+      console.log('[JobMatches] got response:', response);
+      if (mountedRef.current) {
+        const nextCount = response.results.length;
+        setMatches(response.results);
+        console.log('[JobMatches] updated state - matches:', nextCount, 'pending: 0');
+      }
+    } catch (err) {
+      console.error('[JobMatches] getJobMatchesWithPending failed:', err);
+      try {
+        const data = await getJobMatches();
+        if (mountedRef.current) setMatches(data);
+        console.log('[JobMatches] fallback succeeded');
+      } catch (e) {
+        console.error('[JobMatches] fallback also failed:', e);
+        toast.error("Failed to load matches");
+      }
+    } finally {
+      console.log('[JobMatches] setting loading=false');
+      if (mountedRef.current) setLoading(false);
+    }
   }, []);
 
   const handleScan = useCallback(async () => {
+    if (requiresResume) {
+      toast.info("Upload your resume to start finding matching jobs.");
+      return;
+    }
     setScanning(true);
     setHasAttemptedScan(true);
     try {
@@ -346,7 +359,7 @@ export function JobMatches() {
 
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button onClick={handleScan} disabled={isScanning}>
+              <Button onClick={handleScan} disabled={isScanning || requiresResume}>
                 {isScanning ? (
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 ) : (
@@ -355,11 +368,15 @@ export function JobMatches() {
                 {isScanning ? "Analyzing..." : "Load 2 More Jobs"}
               </Button>
             </TooltipTrigger>
-            {isScanning && (
+            {requiresResume ? (
+              <TooltipContent side="top">
+                Upload your resume to start finding matches.
+              </TooltipContent>
+            ) : isScanning ? (
               <TooltipContent side="top">
                 Searching and analyzing 2 jobs...
               </TooltipContent>
-            )}
+            ) : null}
           </Tooltip>
         </motion.div>
 
@@ -545,7 +562,7 @@ export function JobMatches() {
           </div>
         )}
 
-        {!loading && !isScanning && filteredJobs.length === 0 && hasAttemptedScan && (
+        {!loading && !isScanning && filteredJobs.length === 0 && hasAttemptedScan && !requiresResume && (
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -575,6 +592,21 @@ export function JobMatches() {
                   </Button>
                 </>
               )}
+            </Card>
+          </motion.div>
+        )}
+        {!loading && !isScanning && requiresResume && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5 }}
+          >
+            <Card className="p-12 text-center">
+              <Briefcase className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Upload your resume first</h3>
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                Add your resume so we can find jobs that match your experience.
+              </p>
             </Card>
           </motion.div>
         )}
