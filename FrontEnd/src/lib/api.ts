@@ -280,7 +280,7 @@ export async function uploadResume(file: File, onProgress?: (p: number) => void)
   form.append('file', file);
 
   // Use XMLHttpRequest to get upload progress events
-  const token = localStorage.getItem('access');
+  const token = await getToken();
   return new Promise<Resume>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     const url = `${API_BASE}/resumes/`;
@@ -327,7 +327,7 @@ export async function uploadResume(file: File, onProgress?: (p: number) => void)
 
 /** Download resume file (auth required). Triggers browser download. */
 export async function downloadResume(id: number, filename: string): Promise<void> {
-  const token = localStorage.getItem('access');
+  const token = await getToken();
   const url = `${API_BASE}/resumes/${id}/download/`;
   const res = await fetch(url, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
