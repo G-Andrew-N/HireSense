@@ -7,7 +7,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Globe, Bell, Mail, User, Save, Loader2, Camera, Pencil, CheckCircle, AlertCircle } from "lucide-react";
-import { updateProfile } from "../../lib/api";
+import { getJobMatchesWithPending, updateProfile } from "../../lib/api";
 import { useAuth } from "../../lib/auth-context";
 
 interface JobSource {
@@ -36,6 +36,15 @@ export function Settings() {
   const [weeklyReports, setWeeklyReports] = useState(user?.weekly_reports ?? false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
+  const buildFallbackSources = (names: string[]): JobSource[] =>
+    names.map((name) => ({
+      name,
+      type: "Job Feed",
+      description: "Source inferred from recent matches",
+      status: "active",
+      coverage: "Recent matches",
+    }));
+
   useEffect(() => {
     if (user) {
       setFirstName(user.first_name ?? "");
@@ -52,7 +61,22 @@ export function Settings() {
       headers: { Authorization: `Bearer ${localStorage.getItem("access")}` },
     })
       .then((res) => res.json())
-      .then((data) => setJobSources(data.sources || []));
+      .then(async (data) => {
+        const sources = Array.isArray(data.sources) ? data.sources : [];
+        if (sources.length > 0) {
+          setJobSources(sources);
+          return;
+        }
+        try {
+          const matches = await getJobMatchesWithPending();
+          const names = Array.from(
+            new Set((matches.results ?? []).map((job) => job.source).filter(Boolean))
+          );
+          setJobSources(buildFallbackSources(names));
+        } catch {
+          setJobSources([]);
+        }
+      });
 
     Promise.allSettled([sourcesPromise])
       .then((results) => {
