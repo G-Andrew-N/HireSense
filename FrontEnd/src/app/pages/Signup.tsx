@@ -108,8 +108,6 @@ export function Signup() {
     reader.readAsDataURL(file);
   };
 
-  const passwordStrength = formData.password.length >= 8;
-
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-gray-50 via-emerald-50/30 to-teal-50/30 dark:from-gray-950 dark:via-emerald-950/20 dark:to-teal-950/20">
       {/* Back to Home - Top Left */}
