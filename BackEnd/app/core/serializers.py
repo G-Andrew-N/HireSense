@@ -64,6 +64,9 @@ class UserSerializer(serializers.ModelSerializer):
             avatar_url = avatar_url.replace("https:/", "https://", 1)
         if avatar_url.startswith("http:/") and not avatar_url.startswith("http://"):
             avatar_url = avatar_url.replace("http:/", "http://", 1)
+        # Normalize embedded malformed scheme fragments too
+        avatar_url = avatar_url.replace("https:/res.cloudinary.com", "https://res.cloudinary.com")
+        avatar_url = avatar_url.replace("http:/res.cloudinary.com", "http://res.cloudinary.com")
         # If Cloudinary URL was accidentally double-prefixed, keep the last URL
         if avatar_url.count("res.cloudinary.com") > 1:
             idx = avatar_url.rfind("https://res.cloudinary.com")
