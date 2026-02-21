@@ -176,7 +176,6 @@ if _cache_url.startswith("redis://"):
         "default": {
             "BACKEND": "django.core.cache.backends.redis.RedisCache",
             "LOCATION": _cache_url,
-            "OPTIONS": {"KEY_PREFIX": "hiresense"},
             "TIMEOUT": 300,
         }
     }
