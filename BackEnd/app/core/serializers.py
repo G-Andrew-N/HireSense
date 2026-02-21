@@ -57,6 +57,20 @@ class UserSerializer(serializers.ModelSerializer):
         if not profile or not profile.avatar:
             return None
         avatar_url = profile.avatar.url
+        if not avatar_url:
+            return None
+        # Normalize any malformed scheme (e.g., https:/ -> https://)
+        if avatar_url.startswith("https:/") and not avatar_url.startswith("https://"):
+            avatar_url = avatar_url.replace("https:/", "https://", 1)
+        if avatar_url.startswith("http:/") and not avatar_url.startswith("http://"):
+            avatar_url = avatar_url.replace("http:/", "http://", 1)
+        # If Cloudinary URL was accidentally double-prefixed, keep the last URL
+        if avatar_url.count("res.cloudinary.com") > 1:
+            idx = avatar_url.rfind("https://res.cloudinary.com")
+            if idx == -1:
+                idx = avatar_url.rfind("http://res.cloudinary.com")
+            if idx != -1:
+                avatar_url = avatar_url[idx:]
         # If URL is already absolute (from Cloudinary), return as is
         if avatar_url.startswith(("http://", "https://")):
             return avatar_url
