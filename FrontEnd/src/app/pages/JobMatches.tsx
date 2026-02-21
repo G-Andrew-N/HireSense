@@ -103,6 +103,8 @@ export function JobMatches() {
           if (scanInFlightRef.current && nextPending === 0) {
             scanInFlightRef.current = false;
             setScanInFlight(false);
+            // Clear the pending scan flag when scan completes
+            localStorage.removeItem("hiresense:scan-pending");
             
             // Notify user if scan completed but no new qualifying matches were found
             if (nextCount === scanStartCountRef.current) {
@@ -149,18 +151,26 @@ export function JobMatches() {
         setScanInFlight(false);
         setScanning(false);
         scanStartTimeRef.current = null;
+        localStorage.removeItem("hiresense:scan-pending");  // Clear flag on completion
         return;
       }
       // Load pending/analyzing jobs immediately
       await load();
       // Keep scanning=true to enable polling every 3s for updates
     } catch (err: unknown) {
-      const msg = (err as { body?: { detail?: string } })?.body?.detail ?? "Scan failed";
-      toast.error(msg);
+      const errorDetail = (err as { body?: { detail?: string } })?.body?.detail;
+      // Don't show error for benign cases like "no new jobs"
+      if (errorDetail?.toLowerCase().includes("no new jobs") || errorDetail?.toLowerCase().includes("try again later")) {
+        toast.info(errorDetail);
+      } else {
+        const msg = errorDetail ?? "Scan failed";
+        toast.error(msg);
+      }
       scanInFlightRef.current = false;
       setScanInFlight(false);
       setScanning(false);
       scanStartTimeRef.current = null;
+      localStorage.removeItem("hiresense:scan-pending");  // Clear flag on error
     }
   }, [setScanning, load, matches.length]);
 
@@ -175,8 +185,17 @@ export function JobMatches() {
     try {
       const pending = localStorage.getItem("hiresense:scan-pending");
       if (pending && mountedRef.current) {
-        localStorage.removeItem("hiresense:scan-pending");
-        handleScan();
+        // Check if scan was recently set (within last 5 seconds)
+        // This prevents retrying completed scans when navigating back
+        const timestamp = parseInt(pending, 10);
+        const now = Date.now();
+        if (!isNaN(timestamp) && (now - timestamp) < 5000) {
+          localStorage.removeItem("hiresense:scan-pending");
+          handleScan();
+        } else {
+          // Scan flag is stale, just clear it
+          localStorage.removeItem("hiresense:scan-pending");
+        }
       }
     } catch { }
   }, [handleScan]);

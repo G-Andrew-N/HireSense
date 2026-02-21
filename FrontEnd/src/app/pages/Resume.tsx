@@ -65,7 +65,7 @@ export function Resume() {
           setScanning(true);
           window.dispatchEvent(new CustomEvent("hiresense:scan-start"));
           try {
-            localStorage.setItem("hiresense:scan-pending", "1");
+            localStorage.setItem("hiresense:scan-pending", Date.now().toString());
           } catch {}
           toast.info("Match analysis started — scanning for jobs and regenerating insights...");
         } else {
@@ -123,7 +123,7 @@ export function Resume() {
           setScanning(true);
           window.dispatchEvent(new CustomEvent("hiresense:scan-start"));
           try {
-            localStorage.setItem("hiresense:scan-pending", "1");
+            localStorage.setItem("hiresense:scan-pending", Date.now().toString());
           } catch {}
           toast.info("Match analysis started — scanning for jobs and regenerating insights...");
         } else {
