@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Header } from "../components/Header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../components/ui/card";
@@ -6,23 +6,12 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
-import { Globe, Bell, Mail, User, Save, Loader2, Camera, Pencil, CheckCircle, AlertCircle } from "lucide-react";
-import { getJobMatchesWithPending, updateProfile } from "../../lib/api";
+import { Bell, Mail, User, Save, Loader2, Camera, Pencil } from "lucide-react";
+import { updateProfile } from "../../lib/api";
 import { useAuth } from "../../lib/auth-context";
-
-interface JobSource {
-  name: string;
-  type: string;
-  description: string;
-  status: "active" | "disabled";
-  coverage: string;
-  note?: string;
-}
 
 export function Settings() {
   const { user, setUser } = useAuth();
-  const [jobSources, setJobSources] = useState<JobSource[]>([]);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
   const [notificationSaving, setNotificationSaving] = useState(false);
@@ -36,15 +25,6 @@ export function Settings() {
   const [weeklyReports, setWeeklyReports] = useState(user?.weekly_reports ?? false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
-  const buildFallbackSources = (names: string[]): JobSource[] =>
-    names.map((name) => ({
-      name,
-      type: "Job Feed",
-      description: "Source inferred from recent matches",
-      status: "active",
-      coverage: "Recent matches",
-    }));
-
   useEffect(() => {
     if (user) {
       setFirstName(user.first_name ?? "");
@@ -54,43 +34,6 @@ export function Settings() {
       setWeeklyReports(user.weekly_reports ?? false);
     }
   }, [user]);
-
-  const load = () => {
-    setLoading(true);
-    const sourcesPromise = fetch("/api/jobs/sources/", {
-      headers: { Authorization: `Bearer ${localStorage.getItem("access")}` },
-    })
-      .then((res) => res.json())
-      .then(async (data) => {
-        const sources = Array.isArray(data.sources) ? data.sources : [];
-        if (sources.length > 0) {
-          setJobSources(sources);
-          return;
-        }
-        try {
-          const matches = await getJobMatchesWithPending();
-          const names = Array.from(
-            new Set((matches.results ?? []).map((job) => job.source).filter(Boolean))
-          );
-          setJobSources(buildFallbackSources(names));
-        } catch {
-          setJobSources([]);
-        }
-      });
-
-    Promise.allSettled([sourcesPromise])
-      .then((results) => {
-        const sourcesFailed = results[0]?.status === "rejected";
-        if (sourcesFailed) {
-          toast.info("Job sources will appear once the system fetches available jobs.");
-        }
-      })
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    load();
-  }, []);
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -130,115 +73,11 @@ export function Settings() {
     }
   };
 
-  const profileDirty =
-    firstName !== (user?.first_name ?? "") ||
-    lastName !== (user?.last_name ?? "") ||
-    avatarFile !== null;
-
-  const notificationsDirty =
-    emailNotifications !== (user?.email_notifications ?? true) ||
-    highMatchAlerts !== (user?.high_match_alerts ?? true) ||
-    weeklyReports !== (user?.weekly_reports ?? false);
-
-  const handleSaveNotifications = async () => {
-    if (!user) return;
-    setNotificationSaving(true);
-    try {
-      const updated = await updateProfile({
-        email_notifications: emailNotifications,
-        high_match_alerts: highMatchAlerts,
-        weekly_reports: weeklyReports,
-      });
-      setUser(updated);
-      toast.success("Notification preferences saved");
-    } catch (err: unknown) {
-      const msg = (err as { body?: { detail?: string } })?.body?.detail ?? "Failed to save notification preferences";
-      toast.error(msg);
-    } finally {
-      setNotificationSaving(false);
-    }
-  };
-
-  const visibleSources = useMemo(() => {
-    return jobSources;
-  }, [jobSources]);
-
-  return (
-    <div className="flex flex-col h-full overflow-auto">
-      <Header
-        title="Settings"
-        subtitle="Manage your account, notifications, and job site preferences"
-      />
-
+  useEffect(() => {
+    return undefined;
+  }, []);
       <div className="flex-1 p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 pb-20 lg:pb-8">
         <div className="grid grid-cols-1 gap-4 sm:gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Globe className="w-5 h-5" />
-                Active Job Sources
-              </CardTitle>
-              <CardDescription>
-                Data sources used to find job matches for your professions
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {loading ? (
-                <div className="py-8 flex items-center justify-center">
-                  <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {visibleSources.length > 0 ? (
-                    visibleSources.map((source) => (
-                      <div
-                        key={source.name}
-                        className={`flex items-start gap-4 p-4 border rounded-lg transition-colors ${
-                          source.status === "active"
-                            ? "border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20"
-                            : "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/30"
-                        }`}
-                      >
-                        <div className="pt-1">
-                          {source.status === "active" ? (
-                            <CheckCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-                          ) : (
-                            <AlertCircle className="w-5 h-5 text-gray-400" />
-                          )}
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h4 className="font-semibold text-gray-900 dark:text-gray-100">{source.name}</h4>
-                            <span
-                              className={`text-xs px-2 py-1 rounded-full ${
-                                source.status === "active"
-                                  ? "bg-emerald-200 dark:bg-emerald-800 text-emerald-800 dark:text-emerald-200"
-                                  : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
-                              }`}
-                            >
-                              {source.status}
-                            </span>
-                          </div>
-                          <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">{source.description}</p>
-                          <p className="text-xs text-gray-500 dark:text-gray-500">Coverage: {source.coverage}</p>
-                          {source.note && (
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{source.note}</p>
-                          )}
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-gray-500">
-                      {jobSources.length === 0
-                        ? "No job sources are configured yet"
-                        : "No job sources have returned results yet"}
-                    </p>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
