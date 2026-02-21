@@ -159,8 +159,6 @@ USE_CLOUDINARY = os.getenv("CLOUDINARY_CLOUD_NAME", "").strip()
 
 if USE_CLOUDINARY:
     import cloudinary
-    import cloudinary.api
-    from cloudinary.storage import CloudinaryStorage
     
     cloudinary.config(
         cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
