@@ -165,9 +165,20 @@ export function Settings() {
 
   const visibleSources = useMemo(() => {
     if (jobSources.length === 0) return [];
-    if (activeSourceNames.length === 0) return jobSources;
+    const defaultSourceNames = new Set([
+      "Remotive",
+      "We Work Remotely",
+      "We Work Remotely - Design",
+      "We Work Remotely - Marketing",
+      "We Work Remotely - Sales",
+    ]);
+    if (activeSourceNames.length === 0) {
+      return jobSources.filter((source) => defaultSourceNames.has(source.name));
+    }
     const activeSet = new Set(activeSourceNames);
-    return jobSources.filter((source) => activeSet.has(source.name));
+    return jobSources.filter(
+      (source) => defaultSourceNames.has(source.name) || activeSet.has(source.name)
+    );
   }, [activeSourceNames, jobSources]);
 
   return (

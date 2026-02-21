@@ -791,6 +791,8 @@ class JobSourcesView(APIView):
 
     def get(self, request):
         """Get list of active job sources and their status."""
+        from .builtin_job_sites import ensure_builtin_job_sites
+        ensure_builtin_job_sites()
         # Get built-in job sites
         builtin_sites = JobSite.objects.filter(is_builtin=True).order_by("name")
         
