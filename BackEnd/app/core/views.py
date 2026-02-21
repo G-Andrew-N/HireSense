@@ -444,7 +444,14 @@ class JobMatchAnalysisTriggerView(APIView):
         if "error" in result:
             return Response({"detail": result["error"]}, status=status.HTTP_400_BAD_REQUEST)
         data = JobMatchSerializer(result["matches"], many=True).data
-        return Response({"matches": data, "has_more": result["has_more"]})
+        response_data = {
+            "matches": data,
+            "has_more": result["has_more"]
+        }
+        # Include message if jobs were analyzed but none passed threshold
+        if result.get("message"):
+            response_data["message"] = result["message"]
+        return Response(response_data)
 
 
 # ----- Resume -----

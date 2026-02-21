@@ -650,8 +650,15 @@ def _run_match_analysis_chunk(user_id: int, chunk_size: int = 3) -> dict:
 
     created_matches = []
     processed = 0
+    analyzed = 0
+    max_analysis_attempts = chunk_size * 3  # Analyze at most 3x chunk_size jobs to prevent timeout
+    
     for jp in recent:
         if processed >= chunk_size:
+            break
+        # Safety limit: stop analyzing after max_analysis_attempts to prevent worker timeout
+        if analyzed >= max_analysis_attempts:
+            logger.info(f"  ⚠️  Reached max analysis attempts ({max_analysis_attempts}), stopping")
             break
         if not jp.description:
             continue
@@ -660,6 +667,8 @@ def _run_match_analysis_chunk(user_id: int, chunk_size: int = 3) -> dict:
 
         job_desc = f"Job title: {jp.title or 'N/A'}\n\n{jp.description or ''}"
         match_result = match_resume_to_job(resume_text, job_desc)
+        analyzed += 1  # Track how many jobs we actually analyzed
+        
         if not match_result:
             if groq_pace_seconds:
                 time.sleep(groq_pace_seconds)
@@ -669,7 +678,7 @@ def _run_match_analysis_chunk(user_id: int, chunk_size: int = 3) -> dict:
         
         # Only save matches with 50% or higher score to ensure CV relevance
         if match_score < 50:
-            logger.info(f"  ⏭️  Skipped low score ({match_score}%) - {jp.title}")
+            logger.info(f"  ⏭️  [{analyzed}] Skipped low score ({match_score}%) - {jp.title}")
             if groq_pace_seconds:
                 time.sleep(groq_pace_seconds)
             continue
@@ -701,13 +710,21 @@ def _run_match_analysis_chunk(user_id: int, chunk_size: int = 3) -> dict:
         )
         created_matches.append(obj)
         processed += 1
+        logger.info(f"  ✅ [{analyzed}] Match created - Score: {match_score}% | {jp.title}")
         if groq_pace_seconds:
             time.sleep(groq_pace_seconds)
 
     # If we got a full chunk, there are likely more unmatched jobs
     has_more = processed == chunk_size
+    
+    # Provide helpful message when jobs were analyzed but none passed threshold
+    message = None
+    if analyzed > 0 and processed == 0:
+        message = f"Analyzed {analyzed} job(s), but none matched your CV well enough (need 50%+ relevance). Try again later for fresh job postings."
+    elif analyzed > 0 and processed < chunk_size:
+        logger.info(f"  ℹ️  Analyzed {analyzed} jobs, created {processed} matches (some jobs didn't meet 50% threshold)")
 
-    return {"matches": created_matches, "has_more": has_more}
+    return {"matches": created_matches, "has_more": has_more, "message": message, "analyzed": analyzed}
 
 
 @shared_task(bind=True, name="core.tasks.run_match_analysis_for_user", max_retries=3, default_retry_delay=10)

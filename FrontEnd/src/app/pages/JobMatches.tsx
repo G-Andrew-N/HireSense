@@ -152,6 +152,12 @@ export function JobMatches() {
     try {
       const result = await triggerMatchAnalysisChunk(2);
       const newMatches = result.matches ?? [];
+      
+      // If there's a message (e.g., jobs analyzed but none passed threshold), show it
+      if (result.message) {
+        toast.info(result.message);
+      }
+      
       if (newMatches.length > 0) {
         setMatches((prev) => {
           const existing = new Set(prev.map((m) => m.id));
