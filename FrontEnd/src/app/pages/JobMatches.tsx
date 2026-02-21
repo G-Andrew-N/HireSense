@@ -77,6 +77,7 @@ export function JobMatches() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [markingId, setMarkingId] = useState<number | null>(null);
+  const [hasAttemptedScan, setHasAttemptedScan] = useState(false);
   const mountedRef = useRef(true);
   
   // Restore scan start time from localStorage if scanning is in progress
@@ -123,14 +124,11 @@ export function JobMatches() {
 
   const handleScan = useCallback(async () => {
     setScanning(true);
-
-    toast.info("Searching and analyzing 2 jobs...");
+    setHasAttemptedScan(true);
     try {
       const result = await triggerMatchAnalysisChunk(2);
       const newMatches = result.matches ?? [];
-      if (newMatches.length === 0) {
-        toast.info("No new jobs found. Try again later.");
-      } else {
+      if (newMatches.length > 0) {
         setMatches((prev) => {
           const existing = new Set(prev.map((m) => m.id));
           const merged = [...prev];
@@ -141,7 +139,6 @@ export function JobMatches() {
           }
           return merged;
         });
-        toast.success(`Added ${newMatches.length} job${newMatches.length === 1 ? "" : "s"}.`);
       }
     } catch (err: unknown) {
       const errorDetail = (err as { body?: { detail?: string } })?.body?.detail;
@@ -200,7 +197,7 @@ export function JobMatches() {
         try {
           localStorage.setItem("hiresense:scan-start-time", now.toString());
         } catch {}
-        toast.info("Scanning for jobs based on your latest resume...");
+        toast.info("Searching for jobs based on your latest resume...");
       }
     };
     window.addEventListener("hiresense:scan-start", onScanStart);
@@ -384,6 +381,13 @@ export function JobMatches() {
               Loading matches...
             </p>
           </div>
+        ) : isScanning && matches.length === 0 ? (
+          <div className="py-12 text-center">
+            <Loader2 className="w-8 h-8 animate-spin text-emerald-600 mx-auto" />
+            <p className="text-sm text-gray-500 mt-2">
+              Searching for jobs...
+            </p>
+          </div>
         ) : (
           <div className="space-y-4">
             {filteredJobs.length === 0 ? (
@@ -394,7 +398,11 @@ export function JobMatches() {
                     <p className="text-xs text-gray-400 mt-2">Try changing the filter or scan for more positions.</p>
                   </>
                 ) : (
-                  <p>No job matches yet. Click "Scan for New Jobs" to get started!</p>
+                  <p>
+                    {hasAttemptedScan
+                      ? "No jobs found yet. Try again later."
+                      : "Click Find jobs to start searching for matches."}
+                  </p>
                 )}
               </div>
             ) : (
@@ -548,7 +556,7 @@ export function JobMatches() {
           </div>
         )}
 
-        {!loading && !isScanning && filteredJobs.length === 0 && (
+        {!loading && !isScanning && filteredJobs.length === 0 && hasAttemptedScan && (
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -568,9 +576,9 @@ export function JobMatches() {
                 </>
               ) : (
                 <>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">No jobs to show</h3>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">No jobs found</h3>
                   <p className="text-gray-600 dark:text-gray-400 mb-4">
-                    Upload your resume and click Find jobs to see opportunities that match your profession. If you just ran a search and see this, no matching jobs were found right now.
+                    We could not find matching jobs right now. Try again later or adjust your resume.
                   </p>
                   <Button onClick={handleScan} disabled={isScanning}>
                     {isScanning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <TrendingUp className="w-4 h-4 mr-2" />}
