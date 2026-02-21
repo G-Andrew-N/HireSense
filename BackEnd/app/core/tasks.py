@@ -651,7 +651,7 @@ def _run_match_analysis_chunk(user_id: int, chunk_size: int = 3) -> dict:
     created_matches = []
     processed = 0
     analyzed = 0
-    max_analysis_attempts = chunk_size * 3  # Analyze at most 3x chunk_size jobs to prevent timeout
+    max_analysis_attempts = chunk_size * 2  # Analyze at most 2x chunk_size jobs (Render has 30s timeout)
     
     for jp in recent:
         if processed >= chunk_size:
