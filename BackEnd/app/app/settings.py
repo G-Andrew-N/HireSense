@@ -62,6 +62,8 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "django_celery_beat",
+    "cloudinary_storage",
+    "cloudinary",
     "core",
 ]
 
@@ -152,15 +154,26 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 
 # Media files (user uploads, e.g. resumes)
-# Local storage: MEDIA_ROOT. For S3, set USE_S3=true and configure AWS_* env vars.
-MEDIA_URL = os.getenv("MEDIA_URL", "media/")
-MEDIA_ROOT = BASE_DIR / "media"
+# Use Cloudinary for production (set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET)
+USE_CLOUDINARY = os.getenv("CLOUDINARY_CLOUD_NAME", "").strip()
 
-# Optional S3 storage for production (install django-storages, boto3)
-USE_S3 = os.getenv("USE_S3", "false").lower() in ("true", "1", "yes")
-if USE_S3:
-    # Configure DEFAULT_FILE_STORAGE and AWS_* - see django-storages docs
-    pass
+if USE_CLOUDINARY:
+    import cloudinary
+    import cloudinary.api
+    from cloudinary.storage import CloudinaryStorage
+    
+    cloudinary.config(
+        cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+        api_key=os.getenv("CLOUDINARY_API_KEY"),
+        api_secret=os.getenv("CLOUDINARY_API_SECRET"),
+    )
+    
+    DEFAULT_FILE_STORAGE = "cloudinary_storage.storage.MediaCloudinaryStorage"
+    MEDIA_URL = "https://res.cloudinary.com/{}/image/upload/".format(os.getenv("CLOUDINARY_CLOUD_NAME"))
+else:
+    # Fallback to local storage for development
+    MEDIA_URL = os.getenv("MEDIA_URL", "media/")
+    MEDIA_ROOT = BASE_DIR / "media"
 
 # CORS
 CORS_ALLOWED_ORIGINS = [
