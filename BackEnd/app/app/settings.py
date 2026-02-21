@@ -171,7 +171,7 @@ CORS_ALLOWED_ORIGINS = [
 
 # Cache (Redis for throttling + caching; default LocMem for dev; set CACHE_URL=redis://127.0.0.1:6379/1 for prod)
 _cache_url = (os.getenv("CACHE_URL") or "").strip()
-if _cache_url.startswith("redis://"):
+if _cache_url.startswith(("redis://", "rediss://")):
     CACHES = {
         "default": {
             "BACKEND": "django.core.cache.backends.redis.RedisCache",
