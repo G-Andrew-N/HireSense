@@ -793,12 +793,28 @@ class JobSourcesView(APIView):
         """Get list of active job sources and their status."""
         from .builtin_job_sites import ensure_builtin_job_sites
         ensure_builtin_job_sites()
-        # Get built-in job sites
-        builtin_sites = JobSite.objects.filter(is_builtin=True).order_by("name")
+        default_source_names = {
+            "Remotive",
+            "We Work Remotely",
+            "We Work Remotely - Design",
+            "We Work Remotely - Marketing",
+            "We Work Remotely - Sales",
+        }
+        job_source_names = set(
+            JobPosting.objects.exclude(source__isnull=True)
+            .exclude(source__exact="")
+            .values_list("source", flat=True)
+            .distinct()
+        )
+        source_names = default_source_names | job_source_names
+        site_by_name = {
+            site.name: site for site in JobSite.objects.filter(name__in=source_names)
+        }
         
         # Build response with site information
         sources = []
-        for site in builtin_sites:
+        for name in sorted(source_names):
+            site = site_by_name.get(name)
             # Determine type from source_type
             site_type_map = {
                 "rss": "RSS Feed",
@@ -808,14 +824,23 @@ class JobSourcesView(APIView):
                 "glassdoor": "Glassdoor API",
                 "ziprecruiter": "ZipRecruiter API",
             }
-            
-            sources.append({
-                "name": site.name,
-                "type": site_type_map.get(site.source_type, site.source_type),
-                "description": f"Remote job source ({site_type_map.get(site.source_type, site.source_type).lower()})",
-                "status": "active" if site.enabled else "disabled",
-                "coverage": site.scrape_config.get("keywords", "All positions"),
-            })
+            if site:
+                source_type = site_type_map.get(site.source_type, site.source_type)
+                sources.append({
+                    "name": site.name,
+                    "type": source_type,
+                    "description": f"Remote job source ({source_type.lower()})",
+                    "status": "active" if site.enabled else "disabled",
+                    "coverage": site.scrape_config.get("keywords", "All positions"),
+                })
+            else:
+                sources.append({
+                    "name": name,
+                    "type": "Job Feed",
+                    "description": "Imported job source",
+                    "status": "active",
+                    "coverage": "All positions",
+                })
         
         return Response(
             {

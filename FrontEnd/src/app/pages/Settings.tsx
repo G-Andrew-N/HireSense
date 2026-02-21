@@ -7,10 +7,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Globe, Bell, Mail, User, Save, Loader2, Camera, Pencil, CheckCircle, AlertCircle } from "lucide-react";
-import {
-  getJobMatchesWithPending,
-  updateProfile,
-} from "../../lib/api";
+import { updateProfile } from "../../lib/api";
 import { useAuth } from "../../lib/auth-context";
 
 interface JobSource {
@@ -25,7 +22,6 @@ interface JobSource {
 export function Settings() {
   const { user, setUser } = useAuth();
   const [jobSources, setJobSources] = useState<JobSource[]>([]);
-  const [activeSourceNames, setActiveSourceNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
@@ -50,16 +46,6 @@ export function Settings() {
     }
   }, [user]);
 
-  const refreshActiveSources = async () => {
-    try {
-      const data = await getJobMatchesWithPending();
-      const names = Array.from(new Set((data.results ?? []).map((job) => job.source).filter(Boolean)));
-      setActiveSourceNames(names);
-    } catch {
-      setActiveSourceNames([]);
-    }
-  };
-
   const load = () => {
     setLoading(true);
     const sourcesPromise = fetch("/api/jobs/sources/", {
@@ -68,9 +54,7 @@ export function Settings() {
       .then((res) => res.json())
       .then((data) => setJobSources(data.sources || []));
 
-    const activePromise = refreshActiveSources();
-
-    Promise.allSettled([sourcesPromise, activePromise])
+    Promise.allSettled([sourcesPromise])
       .then((results) => {
         const sourcesFailed = results[0]?.status === "rejected";
         if (sourcesFailed) {
@@ -82,18 +66,6 @@ export function Settings() {
 
   useEffect(() => {
     load();
-
-    const interval = window.setInterval(() => {
-      refreshActiveSources();
-    }, 15000);
-
-    const handleFocus = () => refreshActiveSources();
-    window.addEventListener("focus", handleFocus);
-
-    return () => {
-      window.clearInterval(interval);
-      window.removeEventListener("focus", handleFocus);
-    };
   }, []);
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -164,22 +136,8 @@ export function Settings() {
   };
 
   const visibleSources = useMemo(() => {
-    if (jobSources.length === 0) return [];
-    const defaultSourceNames = new Set([
-      "Remotive",
-      "We Work Remotely",
-      "We Work Remotely - Design",
-      "We Work Remotely - Marketing",
-      "We Work Remotely - Sales",
-    ]);
-    if (activeSourceNames.length === 0) {
-      return jobSources.filter((source) => defaultSourceNames.has(source.name));
-    }
-    const activeSet = new Set(activeSourceNames);
-    return jobSources.filter(
-      (source) => defaultSourceNames.has(source.name) || activeSet.has(source.name)
-    );
-  }, [activeSourceNames, jobSources]);
+    return jobSources;
+  }, [jobSources]);
 
   return (
     <div className="flex flex-col h-full overflow-auto">
