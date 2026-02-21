@@ -229,9 +229,9 @@ class PasswordResetRequestView(APIView):
             token = default_token_generator.make_token(user)
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:5173").rstrip("/")
+            reset_link = f"{frontend_url}/reset-password/{uid}/{token}/"
             # Queue email as async Celery task to avoid timeout
-            send_password_reset_email.delay(user.email, reset_link    fail_silently=False,
-            )
+            send_password_reset_email.delay(user.email, reset_link)
         return Response(
             {"detail": "If an account exists with this email, you will receive a reset link."}
         )
