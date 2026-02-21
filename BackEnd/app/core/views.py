@@ -21,6 +21,8 @@ from rest_framework.decorators import action
 from rest_framework.views import APIView
 from rest_framework.mixins import UpdateModelMixin
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import JobMatch, JobPosting, JobSite, Resume, ResumeInsight, UserProfile, SystemNotification, UserNotification
@@ -122,6 +124,14 @@ class LogoutView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class SafeTokenRefreshSerializer(TokenRefreshSerializer):
+    def validate(self, attrs):
+        try:
+            return super().validate(attrs)
+        except (User.DoesNotExist, TokenError) as exc:
+            raise InvalidToken("Invalid or expired refresh token.") from exc
 
 
 class MeView(APIView):
