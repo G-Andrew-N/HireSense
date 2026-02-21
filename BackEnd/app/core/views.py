@@ -375,7 +375,8 @@ class JobScanView(APIView):
     throttle_classes = [ScanThrottle]
 
     def post(self, request):
-        from .tasks import _run_scan_all_limited, _fetch_indeed_jobs_for_user
+        from .tasks import _run_scan_all_limited, _fetch_indeed_jobs_for_user, _run_match_analysis_chunk
+        from .serializers import JobMatchSerializer
 
         limit_param = request.query_params.get("limit")
         limit = int(limit_param) if limit_param and str(limit_param).isdigit() else 2
@@ -390,7 +391,12 @@ class JobScanView(APIView):
             max_total_results=limit,
         )
         result["user_fetch"] = user_fetch_result
-        return Response({"detail": "Scan completed.", **result})
+        analysis_result = _run_match_analysis_chunk(request.user.id, chunk_size=limit)
+        if "error" in analysis_result:
+            result["analysis_error"] = analysis_result["error"]
+            return Response({"detail": "Scan completed.", **result})
+        matches_data = JobMatchSerializer(analysis_result["matches"], many=True).data
+        return Response({"detail": "Scan completed.", "matches": matches_data, **result})
 
 
 class JobScanSiteView(APIView):
