@@ -81,6 +81,7 @@ export function JobMatches() {
   const [markingId, setMarkingId] = useState<number | null>(null);
   const [hasAttemptedScan, setHasAttemptedScan] = useState(false);
   const mountedRef = useRef(true);
+  const hasAutoLoadedRef = useRef(false);
   
   // Restore scan start time from localStorage if scanning is in progress
   const [scanStartTimeRef] = useState(() => {
@@ -216,6 +217,29 @@ export function JobMatches() {
     window.addEventListener("hiresense:scan-start", onScanStart);
     return () => window.removeEventListener("hiresense:scan-start", onScanStart);
   }, [setScanning]);
+
+  // Auto-load first 2 jobs on first visit if user has a resume but no matches
+  useEffect(() => {
+    const autoLoad = async () => {
+      if (loading || isScanning || requiresResume || hasAutoLoadedRef.current) return;
+      if (matches.length > 0) return; // Already has matches
+      
+      try {
+        const resumes = await getResumes();
+        const hasResume = Array.isArray(resumes) && resumes.length > 0;
+        
+        if (hasResume && matches.length === 0 && !hasAutoLoadedRef.current) {
+          hasAutoLoadedRef.current = true;
+          toast.info("Finding your first job matches...");
+          handleScan();
+        }
+      } catch {
+        // Silently fail - user can manually scan if needed
+      }
+    };
+
+    autoLoad();
+  }, [loading, matches.length, isScanning, requiresResume, handleScan]);
 
   const filteredJobs = matches
     .map(toDisplay)
