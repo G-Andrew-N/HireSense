@@ -1,9 +1,13 @@
 /**
  * API client for HireSense backend.
  * Uses fetch with JWT auth, proxy in dev: /api -> backend.
+ * In production, uses full URL to Render backend.
  */
 
-const API_BASE = '/api';
+const API_BASE = 
+  typeof window !== 'undefined' && window.location.hostname === 'localhost'
+    ? '/api'  // Dev: use Vite proxy
+    : 'https://hiresense-0zhv.onrender.com/api';  // Production: full URL
 
 export interface ApiError {
   detail?: string;
