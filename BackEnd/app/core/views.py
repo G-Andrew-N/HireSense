@@ -139,7 +139,9 @@ class MeView(APIView):
     parser_classes = [JSONParser, MultiPartParser, FormParser]
 
     def get(self, request):
-        return Response(UserSerializer(request.user, context={"request": request}).data)
+        # Fetch with select_related to include profile data for avatar serialization
+        user = User.objects.select_related("profile").get(pk=request.user.pk)
+        return Response(UserSerializer(user, context={"request": request}).data)
 
     def patch(self, request):
         user = request.user
@@ -190,8 +192,8 @@ class MeView(APIView):
         if profile_updates:
             profile.save(update_fields=profile_updates)
         
-        # Refresh user from database to ensure related profile is properly loaded
-        user.refresh_from_db()
+        # Fetch the user with profile loaded to ensure serializer gets avatar URL
+        user = User.objects.select_related("profile").get(pk=user.pk)
         return Response(UserSerializer(user, context={"request": request}).data)
 
 
