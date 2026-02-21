@@ -1,13 +1,13 @@
 /**
  * API client for HireSense backend.
  * Uses fetch with JWT auth, proxy in dev: /api -> backend.
- * In production, uses full URL to Render backend.
+ * In production, uses VITE_API_URL environment variable set in Vercel.
  */
 
 const API_BASE = 
   typeof window !== 'undefined' && window.location.hostname === 'localhost'
     ? '/api'  // Dev: use Vite proxy
-    : 'https://hiresense-0zhv.onrender.com/api';  // Production: full URL
+    : (import.meta.env.VITE_API_URL || 'https://hiresense-0zhv.onrender.com/api');  // Production: use env var or fallback
 
 export interface ApiError {
   detail?: string;
