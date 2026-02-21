@@ -56,7 +56,12 @@ class UserSerializer(serializers.ModelSerializer):
         profile = getattr(obj, "profile", None)
         if not profile or not profile.avatar:
             return None
-        return request.build_absolute_uri(profile.avatar.url)
+        avatar_url = profile.avatar.url
+        # If URL is already absolute (from Cloudinary), return as is
+        if avatar_url.startswith(("http://", "https://")):
+            return avatar_url
+        # Otherwise, build absolute URL for local storage
+        return request.build_absolute_uri(avatar_url)
 
     def get_email_notifications(self, obj):
         profile = getattr(obj, "profile", None)
