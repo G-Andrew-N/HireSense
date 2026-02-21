@@ -4,27 +4,9 @@ services:
     runtime: python
     pythonVersion: 3.11.0
     buildCommand: pip install -r ./requirements.txt && python manage.py collectstatic --noinput
-    startCommand: python -m gunicorn app.wsgi:application --bind 0.0.0.0:$PORT --workers 2
+    startCommand: bash start.sh
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
-
-  - type: worker
-    name: hiresense-celery-worker
-    runtime: python
-    pythonVersion: 3.11.0
-    buildCommand: pip install -r ./requirements.txt
-    startCommand: python -m celery -A app worker --loglevel=info --pool=solo
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.0
-
-  - type: worker
-    name: hiresense-celery-beat
-    runtime: python
-    pythonVersion: 3.11.0
-    buildCommand: pip install -r ./requirements.txt
-    startCommand: python -m celery -A app beat --loglevel=info
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.0
+      - key: WEB_CONCURRENCY
+        value: 1
