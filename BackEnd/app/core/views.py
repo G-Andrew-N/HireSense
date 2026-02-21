@@ -666,12 +666,13 @@ class JobMatchViewSet(ModelViewSet):
 
     def get_queryset(self):
         from .tasks import _get_enabled_job_source_names
-        # Show matches from all enabled job sources
+        # Show matches from all enabled job sources with at least 50% match score
         enabled_sources = _get_enabled_job_source_names()
         return (
             JobMatch.objects.filter(
                 user=self.request.user,
                 source__in=enabled_sources,
+                match_score__gte=50,
             )
             .order_by("-match_score", "-created_at")
         )
@@ -683,10 +684,11 @@ class JobMatchViewSet(ModelViewSet):
         from rest_framework.response import Response
         enabled_sources = _get_enabled_job_source_names()
         
-        # Get matched jobs
+        # Get matched jobs with at least 50% match score
         matched = JobMatch.objects.filter(
             user=request.user,
             source__in=enabled_sources,
+            match_score__gte=50,
         ).order_by("-match_score", "-created_at")
         matched_data = JobMatchSerializer(matched, many=True).data
         return Response({

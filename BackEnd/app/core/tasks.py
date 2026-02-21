@@ -555,8 +555,15 @@ def _run_match_analysis_for_user(user_id: int) -> dict:
                 time.sleep(groq_pace_seconds)
             continue
         
-        # Always create a job match record, even for low scores (so UI knows it was analyzed)
+        # Only save matches with 50% or higher score to ensure CV relevance
         match_score = match_result["match_score"]
+        
+        if match_score < 50:
+            analyzed += 1
+            logger.info(f"  ⏭️  [{idx}/{len(recent)}] Skipped low score ({match_score}%) - {jp.title}")
+            if groq_pace_seconds:
+                time.sleep(groq_pace_seconds)
+            continue
         
         if match_score >= 70:
             if groq_between_calls:
@@ -658,7 +665,16 @@ def _run_match_analysis_chunk(user_id: int, chunk_size: int = 3) -> dict:
                 time.sleep(groq_pace_seconds)
             continue
 
-        if match_result["match_score"] >= 70:
+        match_score = match_result["match_score"]
+        
+        # Only save matches with 50% or higher score to ensure CV relevance
+        if match_score < 50:
+            logger.info(f"  ⏭️  Skipped low score ({match_score}%) - {jp.title}")
+            if groq_pace_seconds:
+                time.sleep(groq_pace_seconds)
+            continue
+
+        if match_score >= 70:
             if groq_between_calls:
                 time.sleep(groq_between_calls)
             prob_result = estimate_interview_probability(match_result)
@@ -678,7 +694,7 @@ def _run_match_analysis_chunk(user_id: int, chunk_size: int = 3) -> dict:
             external_url=jp.external_url,
             logo=jp.logo,
             source=jp.source,
-            match_score=match_result["match_score"],
+            match_score=match_score,
             interview_probability=prob,
             skills=match_result.get("matched_skills", []),
             missing_skills=match_result.get("missing_skills", []),
@@ -776,6 +792,13 @@ def analyze_new_jobs_for_all_users(self) -> dict:
                     continue
                 
                 match_score = match_result["match_score"]
+                
+                # Only save matches with 50% or higher score to ensure CV relevance
+                if match_score < 50:
+                    total_analyzed += 1
+                    if groq_pace_seconds:
+                        time.sleep(groq_pace_seconds)
+                    continue
                 
                 if match_score >= 70:
                     if groq_between_calls:
