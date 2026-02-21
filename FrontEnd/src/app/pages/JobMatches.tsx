@@ -83,6 +83,7 @@ export function JobMatches() {
   const scanStartCountRef = useRef(0);
   const scanInFlightRef = useRef(false);
   const mountedRef = useRef(true);
+  const scanStartTimeRef = useRef<number | null>(null);  // Track when scan started
 
   const load = useCallback(() => {
     setLoading(true);
@@ -137,6 +138,7 @@ export function JobMatches() {
     scanInFlightRef.current = true;
     setScanInFlight(true);
     setScanning(true);
+    scanStartTimeRef.current = Date.now();  // Record scan start time
     toast.info("Scanning for new jobs for your profession...");
     try {
       // Trigger fetch of new jobs (backend will auto-trigger analysis)
@@ -146,6 +148,7 @@ export function JobMatches() {
         scanInFlightRef.current = false;
         setScanInFlight(false);
         setScanning(false);
+        scanStartTimeRef.current = null;
         return;
       }
       // Load pending/analyzing jobs immediately
@@ -157,6 +160,7 @@ export function JobMatches() {
       scanInFlightRef.current = false;
       setScanInFlight(false);
       setScanning(false);
+      scanStartTimeRef.current = null;
     }
   }, [setScanning, load, matches.length]);
 
@@ -183,6 +187,7 @@ export function JobMatches() {
       if (mountedRef.current) {
         setMatches([]);
         setScanning(true);
+        scanStartTimeRef.current = Date.now();  // Record when scan started
         toast.info("Scanning for jobs based on your latest resume...");
       }
     };
@@ -193,11 +198,30 @@ export function JobMatches() {
   // When returning to this page while scan is in progress, poll for new matches
   useEffect(() => {
     if (!isScanning) return;
-    // Stop scanning if no pending jobs (all analysis complete)
-    if (!scanInFlight && pendingCount === 0) {
+    
+    const scanElapsed = scanStartTimeRef.current 
+      ? (Date.now() - scanStartTimeRef.current) / 1000 
+      : 999;  // If no start time, assume old scan
+    
+    const hasSeenJobs = matches.length > 0;  // Have we seen ANY jobs yet (analyzing or matched)?
+    const MIN_SCAN_TIME = 30;  // Keep scanning for at least 30 seconds
+    
+    // Stop scanning only if:
+    // 1. We've waited at least MIN_SCAN_TIME seconds AND
+    // 2. Either we've seen jobs and they're all analyzed (pending=0), OR we've waited 90+ seconds
+    const shouldStop = 
+      scanElapsed >= MIN_SCAN_TIME && 
+      (hasSeenJobs && !scanInFlight && pendingCount === 0 || scanElapsed >= 90);
+    
+    if (shouldStop) {
       setScanning(false);
+      scanStartTimeRef.current = null;
+      if (scanElapsed >= 90 && !hasSeenJobs) {
+        toast.info("Job scan timed out. Try scanning again in a moment.");
+      }
       return;
     }
+    
     const id = setInterval(() => {
       load();
     }, 3000);
