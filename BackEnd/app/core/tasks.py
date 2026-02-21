@@ -15,6 +15,13 @@ User = get_user_model()
 logger = logging.getLogger(__name__)
 
 
+@shared_task(name="core.tasks.test_celery")
+def test_celery():
+    """Simple test task to verify Celery worker is running and processing tasks."""
+    logger.info("🎉 CELERY WORKER IS ALIVE AND PROCESSING TASKS!")
+    return {"status": "success", "message": "Celery is working"}
+
+
 def _is_remote_job(raw_job) -> bool:
     """Return True when the job posting is clearly remote."""
     if not raw_job:
@@ -181,17 +188,25 @@ def parse_resume_async(self, resume_id: int) -> dict:
     Called asynchronously to avoid blocking the upload request.
     Time limit: 120 seconds hard, 100 seconds soft (to prevent worker timeout on free tier).
     """
+    logger.info("=" * 80)
+    logger.info("🔄 PARSE_RESUME_ASYNC TASK STARTED: resume_id=%s", resume_id)
+    logger.info("=" * 80)
+    
     try:
         resume = Resume.objects.get(pk=resume_id)
+        logger.info("✓ Resume found: id=%s, user=%s, filename=%s", resume_id, resume.user_id, resume.file.name if resume.file else "None")
+        
         from .resume_pipeline import process_resume_file
         
-        logger.info("Starting async resume parsing for resume %s (user %s)", resume_id, resume.user_id)
+        logger.info("📄 Starting PDF extraction and AI parsing...")
         
         # Set a marker that parsing is in progress
         resume.parsed_content = {"_parsing": True}
         resume.save(update_fields=["parsed_content"])
+        logger.info("✓ Set parsing marker in database")
         
         result = process_resume_file(resume)
+        logger.info("✓ PDF extraction completed: text_length=%d", len(result.raw_text or ""))
         
         # Save parsed content
         resume.raw_text = result.raw_text
@@ -201,7 +216,10 @@ def parse_resume_async(self, resume_id: int) -> dict:
         resume.parsed_content = content
         resume.save(update_fields=["raw_text", "parsed_content"])
         
-        logger.info("Resume parsing completed for resume %s: success=%s", resume_id, result.success)
+        logger.info("=" * 80)
+        logger.info("✅ RESUME PARSING COMPLETED: resume_id=%s, success=%s", resume_id, result.success)
+        logger.info("=" * 80)
+        
         return {
             "success": result.success,
             "resume_id": resume_id,
@@ -209,17 +227,18 @@ def parse_resume_async(self, resume_id: int) -> dict:
             "has_text": bool(result.raw_text),
         }
     except Resume.DoesNotExist:
-        logger.error("Resume %s not found for parsing", resume_id)
+        logger.error("❌ Resume %s not found for parsing", resume_id)
         return {"success": False, "error": "Resume not found"}
     except Exception as e:
-        logger.exception("Resume parsing failed for resume %s: %s", resume_id, e)
+        logger.exception("❌ Resume parsing failed for resume %s: %s", resume_id, e)
         # Clear parsing marker on error
         try:
             resume = Resume.objects.get(pk=resume_id)
             resume.parsed_content = {"error": str(e)}
             resume.save(update_fields=["parsed_content"])
-        except:
-            pass
+            logger.error("✓ Saved error state to database")
+        except Exception as save_error:
+            logger.error("❌ Failed to save error state: %s", save_error)
         return {"success": False, "error": str(e)}
 
 
