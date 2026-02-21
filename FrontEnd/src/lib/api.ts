@@ -7,7 +7,7 @@
 const API_BASE = 
   typeof window !== 'undefined' && window.location.hostname === 'localhost'
     ? '/api'  // Dev: use Vite proxy
-    : (import.meta.env.VITE_API_URL || 'https://hiresense-0zhv.onrender.com/api');  // Production: use env var or fallback
+    : ((import.meta.env as any).VITE_API_URL || 'https://hiresense-0zhv.onrender.com/api');  // Production: use env var or fallback
 
 export interface ApiError {
   detail?: string;
