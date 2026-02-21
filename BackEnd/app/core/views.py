@@ -156,13 +156,16 @@ class MeView(APIView):
                 profile.avatar = avatar_file
                 profile_updates.append("avatar")
             if "email_notifications" in request.data:
-                profile.email_notifications = request.data.get("email_notifications") in [True, "true", "True", 1, "1"]
+                val = request.data.get("email_notifications")
+                profile.email_notifications = val in [True, "true", "True", 1, "1"]
                 profile_updates.append("email_notifications")
             if "high_match_alerts" in request.data:
-                profile.high_match_alerts = request.data.get("high_match_alerts") in [True, "true", "True", 1, "1"]
+                val = request.data.get("high_match_alerts")
+                profile.high_match_alerts = val in [True, "true", "True", 1, "1"]
                 profile_updates.append("high_match_alerts")
             if "weekly_reports" in request.data:
-                profile.weekly_reports = request.data.get("weekly_reports") in [True, "true", "True", 1, "1"]
+                val = request.data.get("weekly_reports")
+                profile.weekly_reports = val in [True, "true", "True", 1, "1"]
                 profile_updates.append("weekly_reports")
         else:
             data = request.data
@@ -171,18 +174,24 @@ class MeView(APIView):
             if "last_name" in data:
                 user.last_name = data.get("last_name", user.last_name) or ""
             if "email_notifications" in data:
-                profile.email_notifications = data.get("email_notifications") in [True, "true", "True", 1, "1"]
+                val = data.get("email_notifications")
+                profile.email_notifications = val in [True, "true", "True", 1, "1"]
                 profile_updates.append("email_notifications")
             if "high_match_alerts" in data:
-                profile.high_match_alerts = data.get("high_match_alerts") in [True, "true", "True", 1, "1"]
+                val = data.get("high_match_alerts")
+                profile.high_match_alerts = val in [True, "true", "True", 1, "1"]
                 profile_updates.append("high_match_alerts")
             if "weekly_reports" in data:
-                profile.weekly_reports = data.get("weekly_reports") in [True, "true", "True", 1, "1"]
+                val = data.get("weekly_reports")
+                profile.weekly_reports = val in [True, "true", "True", 1, "1"]
                 profile_updates.append("weekly_reports")
         
         user.save(update_fields=["first_name", "last_name"])
         if profile_updates:
             profile.save(update_fields=profile_updates)
+        
+        # Refresh user from database to ensure related profile is properly loaded
+        user.refresh_from_db()
         return Response(UserSerializer(user, context={"request": request}).data)
 
 

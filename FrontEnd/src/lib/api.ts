@@ -235,12 +235,12 @@ export async function updateProfile(payload: UpdateProfilePayload): Promise<User
   const { avatar, ...rest } = payload;
   if (avatar) {
     const form = new FormData();
-    if (rest.first_name !== undefined) form.set('first_name', rest.first_name);
-    if (rest.last_name !== undefined) form.set('last_name', rest.last_name);
-    if (rest.email_notifications !== undefined) form.set('email_notifications', String(rest.email_notifications));
-    if (rest.high_match_alerts !== undefined) form.set('high_match_alerts', String(rest.high_match_alerts));
-    if (rest.weekly_reports !== undefined) form.set('weekly_reports', String(rest.weekly_reports));
-    form.set('avatar', avatar);
+    if (rest.first_name !== undefined) form.append('first_name', rest.first_name);
+    if (rest.last_name !== undefined) form.append('last_name', rest.last_name);
+    if (rest.email_notifications !== undefined) form.append('email_notifications', rest.email_notifications ? '1' : '0');
+    if (rest.high_match_alerts !== undefined) form.append('high_match_alerts', rest.high_match_alerts ? '1' : '0');
+    if (rest.weekly_reports !== undefined) form.append('weekly_reports', rest.weekly_reports ? '1' : '0');
+    form.append('avatar', avatar);
     return apiRequest<User>('/auth/me/', { method: 'PATCH', body: form });
   }
   return apiRequest<User>('/auth/me/', {
