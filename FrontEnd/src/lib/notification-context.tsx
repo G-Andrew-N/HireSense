@@ -30,7 +30,7 @@ interface NotificationContextValue {
 
 const NotificationContext = createContext<NotificationContextValue | null>(null);
 
-const STORAGE_KEY = "hiresense_notifications";
+const STORAGE_KEY = "hiresense_notifications_v2";
 
 // No default notifications; start empty until populated by the app
 const DEFAULT_NOTIFICATIONS: Notification[] = [];
