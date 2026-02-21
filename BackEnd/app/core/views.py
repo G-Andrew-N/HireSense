@@ -1,3 +1,6 @@
+import os
+from urllib.parse import urlparse
+
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
@@ -48,6 +51,19 @@ from .serializers import (
 User = get_user_model()
 
 
+def _safe_upload_name(file_name: str) -> str:
+    if not file_name:
+        return "avatar"
+    cleaned = file_name
+    if cleaned.startswith("https:/") and not cleaned.startswith("https://"):
+        cleaned = cleaned.replace("https:/", "https://", 1)
+    if cleaned.startswith("http:/") and not cleaned.startswith("http://"):
+        cleaned = cleaned.replace("http:/", "http://", 1)
+    if cleaned.startswith(("http://", "https://")):
+        cleaned = os.path.basename(urlparse(cleaned).path)
+    return cleaned or "avatar"
+
+
 def _get_tokens_for_user(user):
     refresh = RefreshToken.for_user(user)
     return {"refresh": str(refresh), "access": str(refresh.access_token)}
@@ -68,7 +84,8 @@ class RegisterView(APIView):
         profile, _ = UserProfile.objects.get_or_create(user=user, defaults={})
         avatar_file = request.FILES.get("avatar")
         if avatar_file:
-            profile.avatar = avatar_file
+            safe_name = _safe_upload_name(avatar_file.name)
+            profile.avatar.save(safe_name, avatar_file, save=False)
             profile.save(update_fields=["avatar"])
         return Response(
             {
@@ -155,7 +172,8 @@ class MeView(APIView):
                 user.last_name = request.data.get("last_name", user.last_name) or ""
             avatar_file = request.FILES.get("avatar")
             if avatar_file:
-                profile.avatar = avatar_file
+                safe_name = _safe_upload_name(avatar_file.name)
+                profile.avatar.save(safe_name, avatar_file, save=False)
                 profile_updates.append("avatar")
             if "email_notifications" in request.data:
                 val = request.data.get("email_notifications")
