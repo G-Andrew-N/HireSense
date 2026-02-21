@@ -224,6 +224,24 @@ class PasswordResetRequestView(APIView):
     permission_classes = [AllowAny]
     throttle_classes = [AuthRateThrottle]
 
+    @staticmethod
+    def _send_password_reset_email(email: str, reset_link: str):
+        """Send password reset email with proper error handling."""
+        try:
+            django_send_mail(
+                subject="HireSense: Reset your password",
+                message=(
+                    f"Hi,\n\nYou requested a password reset. Open the link below to set a new password:\n\n"
+                    f"{reset_link}\n\nIf you didn't request this, you can ignore this email.\n\n— HireSense"
+                ),
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[email],
+                fail_silently=False,  # Let exceptions bubble up so we can see them
+            )
+            logger.info(f"✅ Password reset email sent to {email}")
+        except Exception as e:
+            logger.error(f"❌ Failed to send password reset email to {email}: {e}")
+
     def post(self, request):
         serializer = PasswordResetRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -241,17 +259,8 @@ class PasswordResetRequestView(APIView):
                 # Fallback to async threading if Celery/Redis is unavailable
                 logger.warning(f"Celery task queue unavailable, using threading fallback: {e}")
                 email_thread = threading.Thread(
-                    target=django_send_mail,
-                    kwargs={
-                        "subject": "HireSense: Reset your password",
-                        "message": (
-                            f"Hi,\n\nYou requested a password reset. Open the link below to set a new password:\n\n"
-                            f"{reset_link}\n\nIf you didn't request this, you can ignore this email.\n\n— HireSense"
-                        ),
-                        "from_email": settings.DEFAULT_FROM_EMAIL,
-                        "recipient_list": [user.email],
-                        "fail_silently": True,
-                    },
+                    target=self._send_password_reset_email,
+                    args=(user.email, reset_link),
                     daemon=True,
                 )
                 email_thread.start()
