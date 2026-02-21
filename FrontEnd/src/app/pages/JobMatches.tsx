@@ -81,7 +81,15 @@ export function JobMatches() {
   const [markingId, setMarkingId] = useState<number | null>(null);
   const [hasAttemptedScan, setHasAttemptedScan] = useState(false);
   const mountedRef = useRef(true);
-  const hasAutoLoadedRef = useRef(false);
+  
+  // Check localStorage to see if user has ever auto-loaded jobs
+  const hasAutoLoadedRef = useRef(() => {
+    try {
+      return localStorage.getItem("hiresense:has-auto-loaded-jobs") === "true";
+    } catch {
+      return false;
+    }
+  })();
   
   // Restore scan start time from localStorage if scanning is in progress
   const [scanStartTimeRef] = useState(() => {
@@ -227,7 +235,7 @@ export function JobMatches() {
       if (loading) return;
       if (isScanning) return;
       if (requiresResume) return;
-      if (hasAutoLoadedRef.current) return;
+      if (hasAutoLoadedRef.current) return; // Already auto-loaded in this browser
       if (matches.length > 0) return; // Already has matches
       
       try {
@@ -239,6 +247,9 @@ export function JobMatches() {
         if (hasResume) {
           console.log('[JobMatches] Triggering auto-load');
           hasAutoLoadedRef.current = true;
+          try {
+            localStorage.setItem("hiresense:has-auto-loaded-jobs", "true");
+          } catch {}
           toast.info("Finding your first job matches...");
           handleScan();
         }
