@@ -164,7 +164,7 @@ export function JobMatches() {
       localStorage.removeItem("hiresense:scan-pending");
       localStorage.removeItem("hiresense:scan-start-time");
     }
-  }, [setScanning, matches.length]);
+  }, [setScanning, requiresResume]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -221,19 +221,29 @@ export function JobMatches() {
   // Auto-load first 2 jobs on first visit if user has a resume but no matches
   useEffect(() => {
     const autoLoad = async () => {
-      if (loading || isScanning || requiresResume || hasAutoLoadedRef.current) return;
+      console.log('[JobMatches] Auto-load check:', { loading, isScanning, requiresResume, hasAutoLoaded: hasAutoLoadedRef.current, matchesCount: matches.length });
+      
+      // Only run after initial load completes
+      if (loading) return;
+      if (isScanning) return;
+      if (requiresResume) return;
+      if (hasAutoLoadedRef.current) return;
       if (matches.length > 0) return; // Already has matches
       
       try {
+        console.log('[JobMatches] Checking for resumes...');
         const resumes = await getResumes();
         const hasResume = Array.isArray(resumes) && resumes.length > 0;
+        console.log('[JobMatches] Has resume:', hasResume, 'Resume count:', resumes?.length);
         
-        if (hasResume && matches.length === 0 && !hasAutoLoadedRef.current) {
+        if (hasResume) {
+          console.log('[JobMatches] Triggering auto-load');
           hasAutoLoadedRef.current = true;
           toast.info("Finding your first job matches...");
           handleScan();
         }
-      } catch {
+      } catch (err) {
+        console.error('[JobMatches] Auto-load error:', err);
         // Silently fail - user can manually scan if needed
       }
     };
