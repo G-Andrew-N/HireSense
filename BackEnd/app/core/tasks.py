@@ -174,6 +174,26 @@ def scan_all_job_sites_limited(self) -> dict:
     return _run_scan_all_limited(max_results_per_source=3, max_total=30)
 
 
+@shared_task(bind=True, name="core.tasks.scan_jobs_after_resume_upload")
+def scan_jobs_after_resume_upload(self, user_id: int) -> dict:
+    """
+    Background task: Scan job sites after resume upload.
+    Called asynchronously to avoid blocking the upload request.
+    """
+    try:
+        scan_result = _run_scan_all_limited(max_results_per_source=3, max_total=30)
+        logger.info("Fresh job scan completed after resume upload for user %s: %s", user_id, scan_result)
+        return scan_result
+    except Exception as e:
+        logger.exception("Job scan failed after resume upload for user %s: %s", user_id, e)
+        return {
+            "sites_scanned": 0,
+            "total_fetched": 0,
+            "total_stored": 0,
+            "errors": [{"error": str(e)}],
+        }
+
+
 # Skip re-fetch when we already have recent profession-based jobs (e.g. in chunk loop)
 RESUME_FETCH_FRESH_MINUTES = 5
 

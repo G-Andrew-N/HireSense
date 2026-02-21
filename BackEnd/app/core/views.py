@@ -519,20 +519,23 @@ class ResumeViewSet(ModelViewSet):
         # Enqueue match analysis and insights generation asynchronously; return quickly
         self.match_analysis = {"started": False}
         try:
-            from .tasks import run_match_analysis_for_user, generate_insights_for_user, _run_scan_all_limited
+            from .tasks import (
+                run_match_analysis_for_user,
+                generate_insights_for_user,
+                scan_jobs_after_resume_upload,
+            )
         except Exception as e:
             RESUME_LOG.warning("Could not import match analysis/insights tasks: %s", e)
             self.match_analysis = {"started": False, "reason": "import_failed", "error": str(e)}
             return
 
-        # Fetch fresh jobs from all sources BEFORE running match analysis
-        # This ensures there are jobs to analyze when the user first views their matches
+        # Fetch fresh jobs from all sources asynchronously AFTER returning from upload endpoint
+        # This ensures we return quickly and don't block the request
         try:
-            scan_result = _run_scan_all_limited(max_results_per_source=3, max_total=30)
-            RESUME_LOG.info("Fresh job scan completed after resume upload: %s", scan_result)
+            scan_task = scan_jobs_after_resume_upload.delay(instance.user_id)
         except Exception as e:
-            RESUME_LOG.warning("Failed to fetch fresh jobs after resume upload: %s", e)
-            # Continue with match analysis even if scan fails
+            RESUME_LOG.warning("Failed to enqueue job scan after resume upload: %s", e)
+            # Continue with match analysis even if scan task enqueue fails
 
         try:
             task = run_match_analysis_for_user.delay(instance.user_id)
