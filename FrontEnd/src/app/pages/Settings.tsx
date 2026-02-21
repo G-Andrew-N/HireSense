@@ -73,6 +73,16 @@ export function Settings() {
     }
   };
 
+  const profileDirty =
+    firstName !== (user?.first_name ?? "") ||
+    lastName !== (user?.last_name ?? "") ||
+    avatarFile !== null;
+
+  const notificationsDirty =
+    emailNotifications !== (user?.email_notifications ?? true) ||
+    highMatchAlerts !== (user?.high_match_alerts ?? true) ||
+    weeklyReports !== (user?.weekly_reports ?? false);
+
   return (
     <div className="flex flex-col h-full overflow-auto">
       <Header
