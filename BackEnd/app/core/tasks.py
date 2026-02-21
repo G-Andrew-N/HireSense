@@ -174,6 +174,42 @@ def scan_all_job_sites_limited(self) -> dict:
     return _run_scan_all_limited(max_results_per_source=3, max_total=30)
 
 
+@shared_task(bind=True, name="core.tasks.parse_resume_async")
+def parse_resume_async(self, resume_id: int) -> dict:
+    """
+    Background task: Parse resume PDF/text and extract content.
+    Called asynchronously to avoid blocking the upload request.
+    """
+    try:
+        resume = Resume.objects.get(pk=resume_id)
+        from .resume_pipeline import process_resume_file
+        
+        logger.info("Starting async resume parsing for resume %s (user %s)", resume_id, resume.user_id)
+        result = process_resume_file(resume)
+        
+        # Save parsed content
+        resume.raw_text = result.raw_text
+        content = dict(result.parsed_content)
+        if result.structure_hints:
+            content["structure_hints"] = result.structure_hints
+        resume.parsed_content = content
+        resume.save(update_fields=["raw_text", "parsed_content"])
+        
+        logger.info("Resume parsing completed for resume %s: success=%s", resume_id, result.success)
+        return {
+            "success": result.success,
+            "resume_id": resume_id,
+            "user_id": resume.user_id,
+            "has_text": bool(result.raw_text),
+        }
+    except Resume.DoesNotExist:
+        logger.error("Resume %s not found for parsing", resume_id)
+        return {"success": False, "error": "Resume not found"}
+    except Exception as e:
+        logger.exception("Resume parsing failed for resume %s: %s", resume_id, e)
+        return {"success": False, "error": str(e)}
+
+
 @shared_task(bind=True, name="core.tasks.scan_jobs_after_resume_upload")
 def scan_jobs_after_resume_upload(self, user_id: int) -> dict:
     """
@@ -616,9 +652,23 @@ def _run_match_analysis_chunk(user_id: int, chunk_size: int = 3) -> dict:
     return {"matches": created_matches, "has_more": has_more}
 
 
-@shared_task(bind=True, name="core.tasks.run_match_analysis_for_user")
+@shared_task(bind=True, name="core.tasks.run_match_analysis_for_user", max_retries=3, default_retry_delay=10)
 def run_match_analysis_for_user(self, user_id: int) -> dict:
     """Run match analysis for a single user (async)."""
+    try:
+        user = User.objects.get(pk=user_id)
+    except User.DoesNotExist:
+        return {"error": "User not found"}
+
+    resume = _get_current_resume(user)
+    if not resume:
+        return {"error": "No resume found"}
+    
+    # If resume hasn't been parsed yet, retry in a few seconds
+    if not resume.raw_text:
+        logger.info("Resume %s not yet parsed, retrying match analysis in 10s...", resume.id)
+        raise self.retry(countdown=10, exc=Exception("Resume not yet parsed"))
+    
     return _run_match_analysis_for_user(user_id)
 
 
@@ -740,7 +790,7 @@ def run_match_analysis_for_all_users(self) -> dict:
     return {"users_processed": users_with_resumes.count(), "total_matches": total}
 
 
-@shared_task(bind=True, name="core.tasks.generate_insights_for_user")
+@shared_task(bind=True, name="core.tasks.generate_insights_for_user", max_retries=3, default_retry_delay=10)
 def generate_insights_for_user(self, user_id: int) -> dict:
     """Generate resume insights for the user's current resume and replace existing insights."""
     try:
@@ -749,8 +799,13 @@ def generate_insights_for_user(self, user_id: int) -> dict:
         return {"error": "User not found"}
 
     resume = _get_current_resume(user)
-    if not resume or not resume.raw_text:
-        return {"error": "No resume with text"}
+    if not resume:
+        return {"error": "No resume found"}
+    
+    # If resume hasn't been parsed yet, retry in a few seconds
+    if not resume.raw_text:
+        logger.info("Resume %s not yet parsed, retrying insight generation in 10s...", resume.id)
+        raise self.retry(countdown=10, exc=Exception("Resume not yet parsed"))
 
     try:
         from ai.insight_generator import generate_insights
@@ -771,6 +826,7 @@ def generate_insights_for_user(self, user_id: int) -> dict:
                 impact=item.get("impact", "low"),
             )
             created += 1
+        logger.info("Generated %d insights for user %s", created, user_id)
         return {"user_id": user_id, "created": created}
     except Exception as e:
         logger.exception("Insight generation failed for user %s: %s", user_id, e)

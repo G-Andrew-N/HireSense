@@ -504,50 +504,52 @@ class ResumeViewSet(ModelViewSet):
         profile, _ = UserProfile.objects.get_or_create(user=instance.user, defaults={})
         profile.primary_resume = instance
         profile.save(update_fields=["primary_resume"])
-        try:
-            _parse_and_save_resume(instance)
-        except Exception as e:
-            RESUME_LOG.exception("Resume parsing failed after upload: %s", e, exc_info=True)
-            return
-        # Regenerate job listings to reflect the new resume (insights already regenerated in pipeline)
+        
         # Clear any existing job matches for this user so the UI reflects a fresh search
         try:
             JobMatch.objects.filter(user=instance.user).delete()
         except Exception as e:
             RESUME_LOG.warning("Failed to clear previous job matches for user %s: %s", instance.user_id, e)
 
-        # Enqueue match analysis and insights generation asynchronously; return quickly
+        # Enqueue all processing asynchronously to return quickly and avoid worker timeout
         self.match_analysis = {"started": False}
         try:
             from .tasks import (
+                parse_resume_async,
                 run_match_analysis_for_user,
                 generate_insights_for_user,
                 scan_jobs_after_resume_upload,
             )
         except Exception as e:
-            RESUME_LOG.warning("Could not import match analysis/insights tasks: %s", e)
+            RESUME_LOG.warning("Could not import async tasks: %s", e)
             self.match_analysis = {"started": False, "reason": "import_failed", "error": str(e)}
             return
 
-        # Fetch fresh jobs from all sources asynchronously AFTER returning from upload endpoint
-        # This ensures we return quickly and don't block the request
+        # Chain tasks: Parse resume → Generate insights → Scan jobs → Match analysis
+        # This ensures we return immediately without blocking on PDF parsing or AI calls
         try:
-            scan_task = scan_jobs_after_resume_upload.delay(instance.user_id)
-        except Exception as e:
-            RESUME_LOG.warning("Failed to enqueue job scan after resume upload: %s", e)
-            # Continue with match analysis even if scan task enqueue fails
-
-        try:
-            task = run_match_analysis_for_user.delay(instance.user_id)
+            # 1. Parse resume (PDF extraction + content parsing)
+            parse_task = parse_resume_async.delay(instance.id)
+            
+            # 2. Generate insights after parsing completes
             insight_task = generate_insights_for_user.delay(instance.user_id)
+            
+            # 3. Scan jobs from all sources
+            scan_task = scan_jobs_after_resume_upload.delay(instance.user_id)
+            
+            # 4. Run match analysis
+            match_task = run_match_analysis_for_user.delay(instance.user_id)
+            
             self.match_analysis = {
                 "started": True,
                 "async": True,
-                "task_id": getattr(task, "id", None),
+                "parse_task_id": getattr(parse_task, "id", None),
                 "insights_task_id": getattr(insight_task, "id", None),
+                "scan_task_id": getattr(scan_task, "id", None),
+                "match_task_id": getattr(match_task, "id", None),
             }
         except Exception as e:
-            RESUME_LOG.warning("Could not enqueue job scan or insight generation after resume upload: %s", e)
+            RESUME_LOG.warning("Could not enqueue async processing tasks: %s", e)
             self.match_analysis = {"started": False, "reason": "enqueue_failed", "error": str(e)}
 
     def perform_destroy(self, instance):
