@@ -73,6 +73,25 @@ export function Settings() {
     }
   };
 
+  const handleSaveNotifications = async () => {
+    if (!user) return;
+    setNotificationSaving(true);
+    try {
+      const updated = await updateProfile({
+        email_notifications: emailNotifications,
+        high_match_alerts: highMatchAlerts,
+        weekly_reports: weeklyReports,
+      });
+      setUser(updated);
+      toast.success("Notification preferences saved");
+    } catch (err: unknown) {
+      const msg = (err as { body?: { detail?: string } })?.body?.detail ?? "Failed to save notification preferences";
+      toast.error(msg);
+    } finally {
+      setNotificationSaving(false);
+    }
+  };
+
   const profileDirty =
     firstName !== (user?.first_name ?? "") ||
     lastName !== (user?.last_name ?? "") ||
