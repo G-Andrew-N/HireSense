@@ -204,17 +204,6 @@ export function JobMatches() {
     return () => window.removeEventListener("hiresense:scan-start", onScanStart);
   }, [setScanning]);
 
-  // When returning to this page while scan is in progress, poll for new matches
-  useEffect(() => {
-    if (!isScanning) return;
-
-    setScanning(false);
-    scanStartTimeRef.current = null;
-    try {
-      localStorage.removeItem("hiresense:scan-start-time");
-    } catch {}
-  }, [isScanning, setScanning]);
-
   const filteredJobs = matches
     .map(toDisplay)
     .filter((job) => {
