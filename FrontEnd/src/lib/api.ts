@@ -9,6 +9,30 @@ const API_BASE =
     ? '/api'  // Dev: use Vite proxy
     : (import.meta.env.VITE_API_URL || 'https://hiresense-0zhv.onrender.com/api');  // Production: use env var or fallback
 
+function normalizeAvatarUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  let normalized = url;
+  if (normalized.startsWith('https:/') && !normalized.startsWith('https://')) {
+    normalized = normalized.replace('https:/', 'https://');
+  }
+  if (normalized.startsWith('http:/') && !normalized.startsWith('http://')) {
+    normalized = normalized.replace('http:/', 'http://');
+  }
+  normalized = normalized.replace('https:/res.cloudinary.com', 'https://res.cloudinary.com');
+  normalized = normalized.replace('http:/res.cloudinary.com', 'http://res.cloudinary.com');
+  if (normalized.split('res.cloudinary.com').length - 1 > 1) {
+    const httpsIdx = normalized.lastIndexOf('https://res.cloudinary.com');
+    const httpIdx = normalized.lastIndexOf('http://res.cloudinary.com');
+    const idx = Math.max(httpsIdx, httpIdx);
+    if (idx >= 0) normalized = normalized.slice(idx);
+  }
+  return normalized;
+}
+
+function normalizeUser(user: User): User {
+  return { ...user, avatar: normalizeAvatarUrl(user.avatar) };
+}
+
 export interface ApiError {
   detail?: string;
   [key: string]: unknown;
@@ -219,7 +243,8 @@ export interface User {
 }
 
 export async function getMe(): Promise<User> {
-  return apiRequest<User>('/auth/me/');
+  const user = await apiRequest<User>('/auth/me/');
+  return normalizeUser(user);
 }
 
 export interface UpdateProfilePayload {
@@ -241,12 +266,14 @@ export async function updateProfile(payload: UpdateProfilePayload): Promise<User
     if (rest.high_match_alerts !== undefined) form.append('high_match_alerts', rest.high_match_alerts ? '1' : '0');
     if (rest.weekly_reports !== undefined) form.append('weekly_reports', rest.weekly_reports ? '1' : '0');
     form.append('avatar', avatar);
-    return apiRequest<User>('/auth/me/', { method: 'PATCH', body: form });
+    const user = await apiRequest<User>('/auth/me/', { method: 'PATCH', body: form });
+    return normalizeUser(user);
   }
-  return apiRequest<User>('/auth/me/', {
+  const user = await apiRequest<User>('/auth/me/', {
     method: 'PATCH',
     body: JSON.stringify(rest),
   });
+  return normalizeUser(user);
 }
 
 // Resumes
