@@ -73,9 +73,13 @@ export function Settings() {
     }
   };
 
-  useEffect(() => {
-    return undefined;
-  }, []);
+  return (
+    <div className="flex flex-col h-full overflow-auto">
+      <Header
+        title="Settings"
+        subtitle="Manage your account, notifications, and job site preferences"
+      />
+
       <div className="flex-1 p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 pb-20 lg:pb-8">
         <div className="grid grid-cols-1 gap-4 sm:gap-6">
           <Card>
