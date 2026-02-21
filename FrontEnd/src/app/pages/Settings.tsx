@@ -6,7 +6,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
-import { Bell, Mail, User, Save, Loader2, Camera, Pencil } from "lucide-react";
+import { Bell, User, Save, Loader2, Camera, Pencil } from "lucide-react";
 import { updateProfile } from "../../lib/api";
 import { useAuth } from "../../lib/auth-context";
 
@@ -20,7 +20,6 @@ export function Settings() {
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   // Notification preferences
-  const [emailNotifications, setEmailNotifications] = useState(user?.email_notifications ?? true);
   const [highMatchAlerts, setHighMatchAlerts] = useState(user?.high_match_alerts ?? true);
   const [weeklyReports, setWeeklyReports] = useState(user?.weekly_reports ?? false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -29,7 +28,6 @@ export function Settings() {
     if (user) {
       setFirstName(user.first_name ?? "");
       setLastName(user.last_name ?? "");
-      setEmailNotifications(user.email_notifications ?? true);
       setHighMatchAlerts(user.high_match_alerts ?? true);
       setWeeklyReports(user.weekly_reports ?? false);
     }
@@ -78,7 +76,6 @@ export function Settings() {
     setNotificationSaving(true);
     try {
       const updated = await updateProfile({
-        email_notifications: emailNotifications,
         high_match_alerts: highMatchAlerts,
         weekly_reports: weeklyReports,
       });
@@ -98,7 +95,6 @@ export function Settings() {
     avatarFile !== null;
 
   const notificationsDirty =
-    emailNotifications !== (user?.email_notifications ?? true) ||
     highMatchAlerts !== (user?.high_match_alerts ?? true) ||
     weeklyReports !== (user?.weekly_reports ?? false);
 
@@ -122,16 +118,6 @@ export function Settings() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <Mail className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                  <div>
-                    <p className="font-medium text-gray-900 dark:text-gray-100">Email Notifications</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Get daily summaries of new matches</p>
-                  </div>
-                </div>
-                <Switch checked={emailNotifications} onCheckedChange={setEmailNotifications} />
-              </div>
               <div className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
                 <div className="flex items-center gap-3">
                   <Bell className="w-5 h-5 text-gray-600 dark:text-gray-400" />

@@ -573,7 +573,7 @@ def _run_match_analysis_for_user(user_id: int) -> dict:
         else:
             prob = 0
 
-        JobMatch.objects.create(
+        job_match = JobMatch.objects.create(
             user=user,
             job_posting=jp,
             job_site=None,
@@ -592,6 +592,26 @@ def _run_match_analysis_for_user(user_id: int) -> dict:
         )
         analyzed += 1
         logger.info(f"  ✅ [{idx}/{len(recent)}] Match created - Score: {match_score}% | {jp.title}")
+        
+        # Create notification for high match (85%+) if user has alerts enabled
+        if match_score >= 85:
+            try:
+                profile = user.profile
+                if profile.high_match_alerts:
+                    _create_user_notification(
+                        user=user,
+                        title=f"🎯 High Match Found: {match_score}%",
+                        message=f"We found an excellent job match for you!\n\n"
+                                f"**{jp.title}** at **{jp.company}**\n"
+                                f"Match Score: {match_score}%\n"
+                                f"Location: {jp.location or 'Not specified'}\n\n"
+                                f"This job is a great fit for your skills and experience.",
+                        notification_type="alert",
+                    )
+                    logger.info(f"  🔔 High match alert created for {match_score}% match")
+            except Exception as e:
+                logger.warning(f"Failed to create high match notification: {e}")
+        
         if groq_pace_seconds:
             time.sleep(groq_pace_seconds)
 
@@ -711,6 +731,26 @@ def _run_match_analysis_chunk(user_id: int, chunk_size: int = 3) -> dict:
         created_matches.append(obj)
         processed += 1
         logger.info(f"  ✅ [{analyzed}] Match created - Score: {match_score}% | {jp.title}")
+        
+        # Create notification for high match (85%+) if user has alerts enabled
+        if match_score >= 85:
+            try:
+                profile = user.profile
+                if profile.high_match_alerts:
+                    _create_user_notification(
+                        user=user,
+                        title=f"🎯 High Match Found: {match_score}%",
+                        message=f"We found an excellent job match for you!\n\n"
+                                f"**{jp.title}** at **{jp.company}**\n"
+                                f"Match Score: {match_score}%\n"
+                                f"Location: {jp.location or 'Not specified'}\n\n"
+                                f"This job is a great fit for your skills and experience.",
+                        notification_type="alert",
+                    )
+                    logger.info(f"  🔔 High match alert created for {match_score}% match")
+            except Exception as e:
+                logger.warning(f"Failed to create high match notification: {e}")
+        
         if groq_pace_seconds:
             time.sleep(groq_pace_seconds)
 
@@ -825,7 +865,7 @@ def analyze_new_jobs_for_all_users(self) -> dict:
                 else:
                     prob = 0
                 
-                JobMatch.objects.create(
+                job_match = JobMatch.objects.create(
                     user=user,
                     job_posting=jp,
                     job_site=None,
@@ -844,6 +884,25 @@ def analyze_new_jobs_for_all_users(self) -> dict:
                 )
                 total_matches += 1
                 total_analyzed += 1
+                
+                # Create notification for high match (85%+) if user has alerts enabled
+                if match_score >= 85:
+                    try:
+                        profile = user.profile
+                        if profile.high_match_alerts:
+                            _create_user_notification(
+                                user=user,
+                                title=f"🎯 High Match Found: {match_score}%",
+                                message=f"We found an excellent job match for you!\n\n"
+                                        f"**{jp.title}** at **{jp.company}**\n"
+                                        f"Match Score: {match_score}%\n"
+                                        f"Location: {jp.location or 'Not specified'}\n\n"
+                                        f"This job is a great fit for your skills and experience.",
+                                notification_type="alert",
+                            )
+                            logger.info(f"🔔 High match alert created for {user.email} - {match_score}% match")
+                    except Exception as notif_err:
+                        logger.warning(f"Failed to create high match notification: {notif_err}")
                 
                 if groq_pace_seconds:
                     time.sleep(groq_pace_seconds)
@@ -1157,6 +1216,30 @@ def send_weekly_reports(self) -> dict:
                 email_msg.content_subtype = "html"
                 email_msg.send(fail_silently=False)
                 
+                # Create in-app notification for weekly report
+                top_matches_text = "\n".join([
+                    f"• **{m['title']}** at {m['company']} ({m['score']}%)"
+                    for m in match_list[:3]
+                ])
+                
+                notification_message = (
+                    f"Your weekly activity summary for the past 7 days:\n\n"
+                    f"📊 **Total Matches:** {total_matches}\n"
+                    f"🎯 **High Matches (85%+):** {high_matches}\n\n"
+                )
+                
+                if top_matches_text:
+                    notification_message += f"**Top Matches:**\n{top_matches_text}\n\n"
+                
+                notification_message += "Check your Job Matches page to review all opportunities!"
+                
+                _create_user_notification(
+                    user=user,
+                    title=f"📈 Weekly Report: {total_matches} New Opportunities",
+                    message=notification_message,
+                    notification_type="info",
+                )
+                
                 reports_sent += 1
                 logger.info(f"Weekly report sent to {user.email}: {total_matches} matches this week")
                 
@@ -1402,6 +1485,57 @@ def _build_weekly_report_html(user, total_matches, high_matches, top_matches):
     """
 
 # ----- System Notifications -----
+
+
+def _create_user_notification(user, title, message, notification_type="info"):
+    """Helper to create a notification for a specific user (in-app only).
+    
+    Args:
+        user: User object
+        title: Notification title
+        message: Notification message body
+        notification_type: One of 'info', 'alert', 'warning', 'important', 'maintenance'
+    
+    Returns:
+        UserNotification object or None if failed
+    """
+    from .models import SystemNotification, UserNotification
+    
+    try:
+        # Map notification_type string to SystemNotification.NotificationType
+        type_map = {
+            "info": SystemNotification.NotificationType.INFO,
+            "alert": SystemNotification.NotificationType.ALERT,
+            "warning": SystemNotification.NotificationType.WARNING,
+            "important": SystemNotification.NotificationType.IMPORTANT,
+            "maintenance": SystemNotification.NotificationType.MAINTENANCE,
+        }
+        notif_type = type_map.get(notification_type.lower(), SystemNotification.NotificationType.INFO)
+        
+        # Create system notification (not sent to all users, just stored)
+        sys_notif = SystemNotification.objects.create(
+            title=title,
+            message=message,
+            notification_type=notif_type,
+            created_by=user,  # Use the user as creator for user-specific notifications
+            is_sent=True,  # Mark as sent since we're creating the user notification immediately
+            send_immediately=False,  # This is a user-specific notification, not broadcast
+            sent_at=timezone.now(),
+        )
+        
+        # Create user notification receipt
+        user_notif = UserNotification.objects.create(
+            user=user,
+            notification=sys_notif,
+            is_read=False,
+        )
+        
+        logger.info(f"Created notification for {user.email}: {title}")
+        return user_notif
+        
+    except Exception as e:
+        logger.error(f"Failed to create notification for {user.email}: {str(e)}")
+        return None
 
 
 @shared_task
