@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from celery import shared_task
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.mail import send_mail
 from django.db.models import Q
 from django.utils import timezone
 
@@ -20,6 +21,28 @@ def test_celery():
     """Simple test task to verify Celery worker is running and processing tasks."""
     logger.info("🎉 CELERY WORKER IS ALIVE AND PROCESSING TASKS!")
     return {"status": "success", "message": "Celery is working"}
+
+
+@shared_task(name="core.tasks.send_password_reset_email", bind=True, max_retries=3)
+def send_password_reset_email(self, email: str, reset_link: str):
+    """Send password reset email asynchronously to avoid blocking requests."""
+    try:
+        send_mail(
+            subject="HireSense: Reset your password",
+            message=(
+                f"Hi,\n\nYou requested a password reset. Open the link below to set a new password:\n\n"
+                f"{reset_link}\n\nIf you didn't request this, you can ignore this email.\n\n— HireSense"
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[email],
+            fail_silently=False,
+        )
+        logger.info(f"✅ Password reset email sent to {email}")
+        return {"status": "success", "email": email}
+    except Exception as exc:
+        logger.error(f"❌ Failed to send password reset email to {email}: {exc}")
+        # Retry after 60 seconds, max 3 attempts
+        self.retry(exc=exc, countdown=60)
 
 
 def _is_remote_job(raw_job) -> bool:

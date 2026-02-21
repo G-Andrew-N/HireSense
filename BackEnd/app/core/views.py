@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
-from django.core.mail import send_mail
+from django.core.mail import send_mail as django_send_mail
 from django.db.models import Q
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
@@ -30,6 +30,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import JobMatch, JobPosting, JobSite, Resume, ResumeInsight, UserProfile, SystemNotification, UserNotification
 from .resume_pipeline import process_resume_text, run_pipeline_and_save
+from .tasks import send_password_reset_email
 from .resume_utils import extract_text_from_file, validate_resume_file
 from .throttles import AIEndpointThrottle, AIInsightsThrottle, AIMatchThrottle, AuthRateThrottle, ScanThrottle
 from .serializers import (
@@ -228,16 +229,8 @@ class PasswordResetRequestView(APIView):
             token = default_token_generator.make_token(user)
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:5173").rstrip("/")
-            reset_link = f"{frontend_url}/reset-password?uid={uid}&token={token}"
-            send_mail(
-                subject="HireSense: Reset your password",
-                message=(
-                    f"Hi,\n\nYou requested a password reset. Open the link below to set a new password:\n\n"
-                    f"{reset_link}\n\nIf you didn't request this, you can ignore this email.\n\n— HireSense"
-                ),
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
-                fail_silently=False,
+            # Queue email as async Celery task to avoid timeout
+            send_password_reset_email.delay(user.email, reset_link    fail_silently=False,
             )
         return Response(
             {"detail": "If an account exists with this email, you will receive a reset link."}
