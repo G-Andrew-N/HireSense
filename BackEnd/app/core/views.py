@@ -1,5 +1,7 @@
 import os
 from urllib.parse import urlparse
+import logging
+import threading
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -11,6 +13,8 @@ from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.exceptions import APIException
+
+logger = logging.getLogger(__name__)
 
 
 class UploadFailedError(APIException):
@@ -231,7 +235,26 @@ class PasswordResetRequestView(APIView):
             frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:5173").rstrip("/")
             reset_link = f"{frontend_url}/reset-password/{uid}/{token}/"
             # Queue email as async Celery task to avoid timeout
-            send_password_reset_email.delay(user.email, reset_link)
+            try:
+                send_password_reset_email.delay(user.email, reset_link)
+            except Exception as e:
+                # Fallback to async threading if Celery/Redis is unavailable
+                logger.warning(f"Celery task queue unavailable, using threading fallback: {e}")
+                email_thread = threading.Thread(
+                    target=django_send_mail,
+                    kwargs={
+                        "subject": "HireSense: Reset your password",
+                        "message": (
+                            f"Hi,\n\nYou requested a password reset. Open the link below to set a new password:\n\n"
+                            f"{reset_link}\n\nIf you didn't request this, you can ignore this email.\n\n— HireSense"
+                        ),
+                        "from_email": settings.DEFAULT_FROM_EMAIL,
+                        "recipient_list": [user.email],
+                        "fail_silently": True,
+                    },
+                    daemon=True,
+                )
+                email_thread.start()
         return Response(
             {"detail": "If an account exists with this email, you will receive a reset link."}
         )
