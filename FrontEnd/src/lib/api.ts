@@ -30,22 +30,36 @@ function isPublicAuthPath(path: string): boolean {
 }
 
 async function getToken(): Promise<string | null> {
-  return localStorage.getItem('access');
+  return localStorage.getItem('access') || sessionStorage.getItem('access');
 }
 
-async function setTokens(access: string, refresh: string): Promise<void> {
-  localStorage.setItem('access', access);
-  localStorage.setItem('refresh', refresh);
+async function setTokens(access: string, refresh: string, remember: boolean = true): Promise<void> {
+  // Clear tokens from both storages first to avoid conflicts
+  localStorage.removeItem('access');
+  localStorage.removeItem('refresh');
+  sessionStorage.removeItem('access');
+  sessionStorage.removeItem('refresh');
+  
+  // Store in appropriate location based on remember preference
+  const storage = remember ? localStorage : sessionStorage;
+  storage.setItem('access', access);
+  storage.setItem('refresh', refresh);
 }
 
 async function clearTokens(): Promise<void> {
   localStorage.removeItem('access');
   localStorage.removeItem('refresh');
+  sessionStorage.removeItem('access');
+  sessionStorage.removeItem('refresh');
 }
 
 async function refreshAccessToken(): Promise<string | null> {
-  const refresh = localStorage.getItem('refresh');
+  const refresh = localStorage.getItem('refresh') || sessionStorage.getItem('refresh');
   if (!refresh) return null;
+  
+  // Determine which storage was used
+  const storage = localStorage.getItem('refresh') ? localStorage : sessionStorage;
+  
   const res = await fetch(`${API_BASE}/auth/refresh/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -55,8 +69,8 @@ async function refreshAccessToken(): Promise<string | null> {
   const data = await res.json();
   const access = data.access;
   if (access) {
-    localStorage.setItem('access', access);
-    if (data.refresh) localStorage.setItem('refresh', data.refresh);
+    storage.setItem('access', access);
+    if (data.refresh) storage.setItem('refresh', data.refresh);
     return access;
   }
   return null;
@@ -117,12 +131,12 @@ export interface LoginResponse {
   refresh: string;
 }
 
-export async function login(email: string, password: string): Promise<LoginResponse> {
+export async function login(email: string, password: string, rememberMe: boolean = false): Promise<LoginResponse> {
   const data = await apiRequest<LoginResponse>('/auth/login/', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
   });
-  await setTokens(data.access, data.refresh);
+  await setTokens(data.access, data.refresh, rememberMe);
   return data;
 }
 

@@ -24,7 +24,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   const loadUser = useCallback(async () => {
-    const token = localStorage.getItem("access");
+    const token = localStorage.getItem("access") || sessionStorage.getItem("access");
     if (!token) {
       setUser(null);
       setIsLoading(false);

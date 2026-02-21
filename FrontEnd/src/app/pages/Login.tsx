@@ -15,6 +15,7 @@ export function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -22,7 +23,7 @@ export function Login() {
     if (!email || !password) return;
     setLoading(true);
     try {
-      const res = await login(email, password);
+      const res = await login(email, password, rememberMe);
       setUser(res.user);
       navigate("/dashboard");
     } catch (err: unknown) {
@@ -137,9 +138,11 @@ export function Login() {
                   <input
                     id="remember"
                     type="checkbox"
-                    className="w-4 h-4 text-emerald-600 border-gray-300 focus:ring-emerald-500"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="w-4 h-4 text-emerald-600 border-gray-300 focus:ring-emerald-500 cursor-pointer"
                   />
-                  <label htmlFor="remember" className="ml-2 text-sm text-gray-600 dark:text-gray-400">
+                  <label htmlFor="remember" className="ml-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
                     Remember me
                   </label>
                 </div>
