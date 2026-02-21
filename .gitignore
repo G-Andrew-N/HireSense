@@ -41,6 +41,11 @@ dump.rdb
 logs/
 *.log
 
+# Markdown (keep README)
+*.md
+!README.md
+!readme.md
+
 ADMIN_DASHBOARD.MD
 ADMIN_IMPLEMENTATION_SUMMARY.MD
 ADMIN_TESTING.MD
