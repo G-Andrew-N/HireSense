@@ -73,7 +73,9 @@ export function Settings() {
     Promise.allSettled([sourcesPromise, activePromise])
       .then((results) => {
         const sourcesFailed = results[0]?.status === "rejected";
-        if (sourcesFailed) toast.error("Failed to load job sources");
+        if (sourcesFailed) {
+          toast.info("Job sources will appear once the system fetches available jobs.");
+        }
       })
       .finally(() => setLoading(false));
   };
