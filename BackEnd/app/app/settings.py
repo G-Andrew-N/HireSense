@@ -277,16 +277,18 @@ LOGGING = {
 from celery.schedules import crontab
 
 CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'rediss://default:AS_-AAIncDI2MTEwZGU5YTMyMDE0OTkyYjE0YzkzZmZiMjc2ZjNiMnAyMTIyODY@relaxed-bison-12286.upstash.io:6379/0')
-CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', 'rediss://default:AS_-AAIncDI2MTEwZGU5YTMyMDE0OTkyYjE0YzkzZmZiMjc2ZjNiMnAyMTIyODY@relaxed-bison-12286.upstash.io:6379/0')
+
+# Disable result backend - we don't track task results (fire-and-forget pattern)
+# This reduces Redis usage and prevents reconnection errors on free tier
+CELERY_RESULT_BACKEND = None
+CELERY_TASK_IGNORE_RESULT = True
 
 CELERY_TASK_SERIALIZER = 'json'
-CELERY_RESULT_SERIALIZER = 'json'
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TIMEZONE = 'UTC'
 CELERY_ENABLE_UTC = True
 
-CELERY_RESULT_EXPIRES = 3600
-CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TRACK_STARTED = False  # No need to track if we're not storing results
 CELERY_TASK_TIME_LIMIT = 30 * 60
 CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60
 
