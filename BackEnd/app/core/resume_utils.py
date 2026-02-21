@@ -102,17 +102,36 @@ def _detect_sections(text: str) -> dict:
 
 
 def _extract_pdf(file) -> str:
-    """Extract text from PDF, preserving page boundaries."""
+    """
+    Extract text from PDF, preserving page boundaries.
+    Limited to first 10 pages to prevent memory issues and timeouts on free tier.
+    """
     from PyPDF2 import PdfReader
 
-    file.seek(0)
-    reader = PdfReader(file)
-    parts = []
-    for page in reader.pages:
-        text = page.extract_text()
-        if text:
-            parts.append(text.strip())
-    return "\n\n".join(parts)
+    try:
+        file.seek(0)
+        reader = PdfReader(file)
+        
+        # Limit to first 10 pages (resumes should be 1-2 pages anyway)
+        max_pages = min(len(reader.pages), 10)
+        
+        parts = []
+        for i in range(max_pages):
+            try:
+                page = reader.pages[i]
+                text = page.extract_text()
+                if text:
+                    parts.append(text.strip())
+            except Exception as e:
+                logger.warning(f"Failed to extract page {i+1}: {e}")
+                continue
+        
+        result = "\n\n".join(parts)
+        logger.info(f"Extracted {len(result)} characters from {max_pages} pages")
+        return result
+    except Exception as e:
+        logger.exception(f"PDF extraction failed: {e}")
+        return ""
 
 
 def _extract_docx(file) -> str:

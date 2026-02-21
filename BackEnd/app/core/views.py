@@ -721,8 +721,7 @@ class JobMatchViewSet(ModelViewSet):
         query = get_job_search_query(resume) if resume else "jobs"
         keywords = [w.lower() for w in query.split() if len(w) > 2]
 
-        # Only show pending jobs if we know the user's profession (query != "jobs")
-        # Otherwise, showing random tech/design jobs to a real estate agent is misleading
+        # Show pending jobs filtered by profession, or show top general tech jobs if no profession yet
         if keywords and query.lower() != "jobs":
             filtered_pending = []
             for posting in pending_postings:
@@ -740,9 +739,18 @@ class JobMatchViewSet(ModelViewSet):
             
             logger.info(f"with_pending: filtered_pending_count={len(filtered_pending)} (from {pending_postings.count()} total)")
         else:
-            # Don't show pending jobs when profession is unknown
+            # Show top 5 general tech/developer jobs when profession is unknown (resume still parsing)
+            # This provides some initial content while background parsing completes
+            general_tech_keywords = ['engineer', 'developer', 'software', 'programmer', 'tech', 'AI', 'full-stack', 'backend', 'frontend']
             filtered_pending = []
-            logger.info(f"with_pending: no profession keywords, hiding all pending jobs")
+            for posting in pending_postings:
+                title_lower = (posting.title or '').lower()
+                if any(keyword in title_lower for keyword in general_tech_keywords):
+                    filtered_pending.append(posting)
+                    if len(filtered_pending) >= 5:  # Limit to 5 jobs
+                        break
+            
+            logger.info(f"with_pending: showing {len(filtered_pending)} general tech jobs while resume parsing (no profession keywords yet)")
 
         # Convert pending postings to a match-like format with status='analyzing'
         pending_data = []

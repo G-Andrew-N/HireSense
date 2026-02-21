@@ -48,7 +48,7 @@ def _chat_openai(system: str, user: str, temperature: float) -> str:
     api_key = getattr(settings, "OPENAI_API_KEY", None)
     if not api_key:
         raise ValueError("OPENAI_API_KEY must be set in Django settings")
-    client = OpenAI(api_key=api_key)
+    client = OpenAI(api_key=api_key, timeout=60.0)  # 60 second timeout
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
@@ -68,7 +68,7 @@ def _chat_gemini(system: str, user: str, temperature: float) -> str:
     api_key = getattr(settings, "GEMINI_API_KEY", None)
     if not api_key:
         raise ValueError("GEMINI_API_KEY must be set when AI_PROVIDER=gemini")
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(api_key=api_key, http_options={'timeout': 60})  # 60 second timeout
     prompt = f"{system}\n\n---\n\n{user}"
     config = types.GenerateContentConfig(
         system_instruction=system,
@@ -98,7 +98,7 @@ def _chat_groq(system: str, user: str, temperature: float) -> str:
     api_key = getattr(settings, "GROQ_API_KEY", None)
     if not api_key:
         raise ValueError("GROQ_API_KEY must be set when AI_PROVIDER=groq")
-    client = Groq(api_key=api_key)
+    client = Groq(api_key=api_key, timeout=60.0)  # 60 second timeout
 
     # Simple distributed RPM limiter using Django cache (works when CACHE_URL is redis://...)
     # Prevents exceeding Groq RPM limits by gating requests per minute.

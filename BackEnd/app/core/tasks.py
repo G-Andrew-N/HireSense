@@ -174,17 +174,23 @@ def scan_all_job_sites_limited(self) -> dict:
     return _run_scan_all_limited(max_results_per_source=3, max_total=30)
 
 
-@shared_task(bind=True, name="core.tasks.parse_resume_async")
+@shared_task(bind=True, name="core.tasks.parse_resume_async", time_limit=120, soft_time_limit=100)
 def parse_resume_async(self, resume_id: int) -> dict:
     """
     Background task: Parse resume PDF/text and extract content.
     Called asynchronously to avoid blocking the upload request.
+    Time limit: 120 seconds hard, 100 seconds soft (to prevent worker timeout on free tier).
     """
     try:
         resume = Resume.objects.get(pk=resume_id)
         from .resume_pipeline import process_resume_file
         
         logger.info("Starting async resume parsing for resume %s (user %s)", resume_id, resume.user_id)
+        
+        # Set a marker that parsing is in progress
+        resume.parsed_content = {"_parsing": True}
+        resume.save(update_fields=["parsed_content"])
+        
         result = process_resume_file(resume)
         
         # Save parsed content
@@ -207,6 +213,13 @@ def parse_resume_async(self, resume_id: int) -> dict:
         return {"success": False, "error": "Resume not found"}
     except Exception as e:
         logger.exception("Resume parsing failed for resume %s: %s", resume_id, e)
+        # Clear parsing marker on error
+        try:
+            resume = Resume.objects.get(pk=resume_id)
+            resume.parsed_content = {"error": str(e)}
+            resume.save(update_fields=["parsed_content"])
+        except:
+            pass
         return {"success": False, "error": str(e)}
 
 
