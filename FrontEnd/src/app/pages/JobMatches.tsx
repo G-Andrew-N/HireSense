@@ -83,7 +83,16 @@ export function JobMatches() {
   const scanStartCountRef = useRef(0);
   const scanInFlightRef = useRef(false);
   const mountedRef = useRef(true);
-  const scanStartTimeRef = useRef<number | null>(null);  // Track when scan started
+  
+  // Restore scan start time from localStorage if scanning is in progress
+  const [scanStartTimeRef] = useState(() => {
+    const ref = { current: null as number | null };
+    try {
+      const stored = localStorage.getItem("hiresense:scan-start-time");
+      if (stored) ref.current = parseInt(stored, 10);
+    } catch {}
+    return ref;
+  });
 
   const load = useCallback(() => {
     setLoading(true);
@@ -105,6 +114,7 @@ export function JobMatches() {
             setScanInFlight(false);
             // Clear the pending scan flag when scan completes
             localStorage.removeItem("hiresense:scan-pending");
+            localStorage.removeItem("hiresense:scan-start-time");  // Clear start time
             
             // Notify user if scan completed but no new qualifying matches were found
             if (nextCount === scanStartCountRef.current) {
@@ -140,7 +150,12 @@ export function JobMatches() {
     scanInFlightRef.current = true;
     setScanInFlight(true);
     setScanning(true);
-    scanStartTimeRef.current = Date.now();  // Record scan start time
+    const now = Date.now();
+    scanStartTimeRef.current = now;  // Record scan start time
+    try {
+      localStorage.setItem("hiresense:scan-start-time", now.toString());
+    } catch {}
+    
     toast.info("Scanning for new jobs for your profession...");
     try {
       // Trigger fetch of new jobs (backend will auto-trigger analysis)
@@ -152,6 +167,7 @@ export function JobMatches() {
         setScanning(false);
         scanStartTimeRef.current = null;
         localStorage.removeItem("hiresense:scan-pending");  // Clear flag on completion
+        localStorage.removeItem("hiresense:scan-start-time");
         return;
       }
       // Load pending/analyzing jobs immediately
@@ -171,6 +187,7 @@ export function JobMatches() {
       setScanning(false);
       scanStartTimeRef.current = null;
       localStorage.removeItem("hiresense:scan-pending");  // Clear flag on error
+      localStorage.removeItem("hiresense:scan-start-time");
     }
   }, [setScanning, load, matches.length]);
 
@@ -184,6 +201,8 @@ export function JobMatches() {
   useEffect(() => {
     try {
       const pending = localStorage.getItem("hiresense:scan-pending");
+      const isAutoScan = localStorage.getItem("hiresense:auto-scan") === "true";
+      
       if (pending && mountedRef.current) {
         // Check if scan was recently set (within last 5 seconds)
         // This prevents retrying completed scans when navigating back
@@ -191,10 +210,16 @@ export function JobMatches() {
         const now = Date.now();
         if (!isNaN(timestamp) && (now - timestamp) < 5000) {
           localStorage.removeItem("hiresense:scan-pending");
+          if (isAutoScan) {
+            localStorage.removeItem("hiresense:auto-scan");
+            // Show welcoming message for auto-scan
+            toast.info("Welcome! We're finding jobs that match your resume...");
+          }
           handleScan();
         } else {
           // Scan flag is stale, just clear it
           localStorage.removeItem("hiresense:scan-pending");
+          localStorage.removeItem("hiresense:auto-scan");
         }
       }
     } catch { }
@@ -206,7 +231,11 @@ export function JobMatches() {
       if (mountedRef.current) {
         setMatches([]);
         setScanning(true);
-        scanStartTimeRef.current = Date.now();  // Record when scan started
+        const now = Date.now();
+        scanStartTimeRef.current = now;  // Record when scan started
+        try {
+          localStorage.setItem("hiresense:scan-start-time", now.toString());
+        } catch {}
         toast.info("Scanning for jobs based on your latest resume...");
       }
     };
@@ -235,6 +264,9 @@ export function JobMatches() {
     if (shouldStop) {
       setScanning(false);
       scanStartTimeRef.current = null;
+      try {
+        localStorage.removeItem("hiresense:scan-start-time");
+      } catch {}
       if (scanElapsed >= 90 && !hasSeenJobs) {
         toast.info("Job scan timed out. Try scanning again in a moment.");
       }

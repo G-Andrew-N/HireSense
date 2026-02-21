@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Link, useNavigate } from "react-router";
-import { login } from "../../lib/api";
+import { login, getResumes, getJobMatchesWithPending } from "../../lib/api";
 import { useAuth } from "../../lib/auth-context";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -25,6 +25,27 @@ export function Login() {
     try {
       const res = await login(email, password, rememberMe);
       setUser(res.user);
+      
+      // Check if we should auto-start scanning
+      try {
+        const [resumes, matchesData] = await Promise.all([
+          getResumes(),
+          getJobMatchesWithPending()
+        ]);
+        
+        // Auto-scan if user has resume but no job matches
+        const hasResume = resumes.length > 0;
+        const hasMatches = matchesData.results.length > 0;
+        
+        if (hasResume && !hasMatches) {
+          // Set flag to trigger scan when JobMatches page loads
+          localStorage.setItem("hiresense:scan-pending", Date.now().toString());
+          localStorage.setItem("hiresense:auto-scan", "true");
+        }
+      } catch {
+        // Ignore errors checking auto-scan conditions
+      }
+      
       navigate("/dashboard");
     } catch (err: unknown) {
       const msg = (err as { body?: { detail?: string } })?.body?.detail ?? "Login failed";
