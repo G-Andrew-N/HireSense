@@ -83,13 +83,15 @@ export function JobMatches() {
   const mountedRef = useRef(true);
   
   // Check localStorage to see if user has ever auto-loaded jobs
-  const hasAutoLoadedRef = useRef(() => {
-    try {
-      return localStorage.getItem("hiresense:has-auto-loaded-jobs") === "true";
-    } catch {
-      return false;
-    }
-  })();
+  const hasAutoLoadedRef = useRef(
+    (() => {
+      try {
+        return localStorage.getItem("hiresense:has-auto-loaded-jobs") === "true";
+      } catch {
+        return false;
+      }
+    })()
+  );
   
   // Restore scan start time from localStorage if scanning is in progress
   const [scanStartTimeRef] = useState(() => {
