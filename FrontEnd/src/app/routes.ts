@@ -37,6 +37,10 @@ export const router = createBrowserRouter([
     Component: ResetPassword,
   },
   {
+    path: "/reset-password/:uid/:token",
+    Component: ResetPassword,
+  },
+  {
     path: "/terms-of-service",
     Component: TermsOfService,
   },

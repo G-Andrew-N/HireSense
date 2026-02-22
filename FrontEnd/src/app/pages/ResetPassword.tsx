@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { Link, useSearchParams } from "react-router";
+import { Link, useParams, useSearchParams } from "react-router";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -10,8 +10,9 @@ import { confirmPasswordReset } from "../../lib/api";
 
 export function ResetPassword() {
   const [searchParams] = useSearchParams();
-  const uid = searchParams.get("uid") ?? "";
-  const token = searchParams.get("token") ?? "";
+  const params = useParams();
+  const uid = params.uid ?? searchParams.get("uid") ?? "";
+  const token = params.token ?? searchParams.get("token") ?? "";
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
