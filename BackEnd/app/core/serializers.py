@@ -53,36 +53,28 @@ class UserSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         profile = getattr(obj, "profile", None)
         
-        # Build base URL for avatars
-        if request:
-            base_url = request.build_absolute_uri("/api/media/avatars")
-        else:
-            # Fallback when no request context (e.g., in management commands)
-            base_url = "/api/media/avatars"
-        
         # If user has a custom avatar, return the URL to it
-        if profile and profile.avatar:
-            # Return URL to media-serving view with CORS headers
-            # This avoids OpaqueResponseBlocking errors
+        if profile and profile.avatar and profile.avatar.name:
             avatar_path = profile.avatar.name  # avatars/2026/02/filename.jpg
-            
-            if not avatar_path:
-                return f"{base_url}/default"
             
             # Parse path: avatars/2026/02/filename.jpg -> media/avatars/2026/02/filename
             parts = avatar_path.split('/')
-            if len(parts) < 4:
-                return f"{base_url}/default"
-            
-            year = parts[1]  # 2026
-            month = parts[2]  # 02
-            filename = parts[3]  # filename.jpg
-            
-            # Build URL to CORS-enabled media view
-            return f"{base_url}/{year}/{month}/{filename}"
+            if len(parts) >= 4:
+                year = parts[1]  # 2026
+                month = parts[2]  # 02
+                filename = parts[3]  # filename.jpg
+                
+                # Build URL to CORS-enabled media view
+                if request:
+                    return request.build_absolute_uri(f"/api/media/avatars/{year}/{month}/{filename}")
+                else:
+                    return f"/api/media/avatars/{year}/{month}/{filename}"
         
-        # Return default avatar URL if no custom avatar is set
-        return f"{base_url}/default"
+        # Return default avatar URL - either absolute or relative
+        if request:
+            return request.build_absolute_uri("/api/media/avatars/default")
+        else:
+            return "/api/media/avatars/default"
 
     def get_email_notifications(self, obj):
         profile = getattr(obj, "profile", None)

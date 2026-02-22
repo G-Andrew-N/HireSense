@@ -169,10 +169,10 @@ export function Settings() {
                     <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 flex items-center justify-center ring-2 ring-transparent group-hover:ring-emerald-400 transition-all">
                       {avatarPreview ? (
                         <img src={avatarPreview} alt="Preview" className="w-full h-full object-cover" />
-                      ) : user?.avatar ? (
+                      ) : user?.avatar && user.avatar.trim() ? (
                         <img src={user.avatar} alt="Profile" className="w-full h-full object-cover" />
                       ) : (
-                        <User className="w-10 h-10 text-gray-400" />
+                        <img src="/api/media/avatars/default" alt="Default Profile" className="w-full h-full object-cover" />
                       )}
                     </div>
                     <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">
