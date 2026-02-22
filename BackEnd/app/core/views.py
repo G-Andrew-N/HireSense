@@ -227,6 +227,29 @@ class PasswordResetRequestView(APIView):
     @staticmethod
     def _send_password_reset_email(email: str, reset_link: str):
         """Send password reset email with proper error handling."""
+        resend_api_key = os.getenv("RESEND_API_KEY")
+        
+        # Try Resend first (HTTP API) - works on Render free tier
+        if resend_api_key:
+            try:
+                import resend
+                resend.api_key = resend_api_key
+                
+                resend.Emails.send({
+                    "from": "HireSense <onboarding@resend.dev>",  # Resend's test domain
+                    "to": email,
+                    "subject": "HireSense: Reset your password",
+                    "text": (
+                        f"Hi,\n\nYou requested a password reset. Open the link below to set a new password:\n\n"
+                        f"{reset_link}\n\nIf you didn't request this, you can ignore this email.\n\n— HireSense"
+                    ),
+                })
+                logger.info(f"✅ Password reset email sent to {email} via Resend")
+                return
+            except Exception as e:
+                logger.error(f"❌ Resend failed for {email}: {e}")
+        
+        # Fallback to SMTP (for local development)
         try:
             django_send_mail(
                 subject="HireSense: Reset your password",
@@ -236,9 +259,9 @@ class PasswordResetRequestView(APIView):
                 ),
                 from_email=settings.DEFAULT_FROM_EMAIL,
                 recipient_list=[email],
-                fail_silently=False,  # Let exceptions bubble up so we can see them
+                fail_silently=False,
             )
-            logger.info(f"✅ Password reset email sent to {email}")
+            logger.info(f"✅ Password reset email sent to {email} via SMTP")
         except Exception as e:
             logger.error(f"❌ Failed to send password reset email to {email}: {e}")
 

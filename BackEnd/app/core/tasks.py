@@ -1,4 +1,5 @@
 """Celery tasks for HireSense job scanning and match analysis."""
+import os
 import logging
 from datetime import date, timedelta
 
@@ -26,6 +27,29 @@ def test_celery():
 @shared_task(name="core.tasks.send_password_reset_email", bind=True, max_retries=3)
 def send_password_reset_email(self, email: str, reset_link: str):
     """Send password reset email asynchronously to avoid blocking requests."""
+    resend_api_key = os.getenv("RESEND_API_KEY")
+    
+    # Try Resend first (HTTP API) - works on Render free tier
+    if resend_api_key:
+        try:
+            import resend
+            resend.api_key = resend_api_key
+            
+            resend.Emails.send({
+                "from": "HireSense <onboarding@resend.dev>",
+                "to": email,
+                "subject": "HireSense: Reset your password",
+                "text": (
+                    f"Hi,\n\nYou requested a password reset. Open the link below to set a new password:\n\n"
+                    f"{reset_link}\n\nIf you didn't request this, you can ignore this email.\n\n— HireSense"
+                ),
+            })
+            logger.info(f"✅ Password reset email sent to {email} via Resend")
+            return {"status": "success", "email": email, "method": "resend"}
+        except Exception as exc:
+            logger.error(f"❌ Resend failed for {email}: {exc}")
+    
+    # Fallback to SMTP
     try:
         send_mail(
             subject="HireSense: Reset your password",
@@ -37,11 +61,10 @@ def send_password_reset_email(self, email: str, reset_link: str):
             recipient_list=[email],
             fail_silently=False,
         )
-        logger.info(f"✅ Password reset email sent to {email}")
-        return {"status": "success", "email": email}
+        logger.info(f"✅ Password reset email sent to {email} via SMTP")
+        return {"status": "success", "email": email, "method": "smtp"}
     except Exception as exc:
         logger.error(f"❌ Failed to send password reset email to {email}: {exc}")
-        # Retry after 60 seconds, max 3 attempts
         self.retry(exc=exc, countdown=60)
 
 
