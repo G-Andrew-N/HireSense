@@ -1,31 +1,40 @@
+import logging
 from django.contrib.auth import get_user_model
+from django.conf import settings
 from rest_framework import serializers
 
 from .models import JobMatch, JobSite, Resume, ResumeInsight, UserProfile, SystemNotification, UserNotification
 
+logger = logging.getLogger(__name__)
 User = get_user_model()
 
 
 def get_avatar_url(request, path_suffix="/api/media/avatars/default"):
     """
-    Build an absolute URL for avatar resources.
-    Handles edge cases where request object might not be available or build_absolute_uri fails.
+    Build a URL for avatar resources.
+    Tries to build an absolute URL if request is available, falls back to relative URL.
     
     Args:
         request: DRF request object (may be None)
         path_suffix: Relative path including leading slash (e.g., "/api/media/avatars/default")
     
     Returns:
-        str: Absolute or relative URL for the avatar resource
+        str: Absolute URL if possible, otherwise relative URL
     """
+    # If no request, return relative path
     if not request:
+        logger.debug(f"get_avatar_url: No request object, returning relative path: {path_suffix}")
         return path_suffix
     
     try:
         # Try to build absolute URI using request object
-        return request.build_absolute_uri(path_suffix)
-    except Exception:
-        # Fallback to relative path if build_absolute_uri fails
+        # This respects proxy headers (X-Forwarded-Proto, X-Forwarded-Host) when configured
+        absolute_url = request.build_absolute_uri(path_suffix)
+        logger.debug(f"get_avatar_url: Built absolute URL: {absolute_url}")
+        return absolute_url
+    except Exception as e:
+        # Log the error but continue - relative URL is acceptable
+        logger.warning(f"get_avatar_url: Could not build absolute URL ({type(e).__name__}: {str(e)}), returning relative path")
         return path_suffix
 
 
@@ -76,6 +85,9 @@ class UserSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         profile = getattr(obj, "profile", None)
         
+        # Log the serialization attempt
+        user_id = getattr(obj, "id", "unknown")
+        
         # If user has a custom avatar, return the URL to it
         if profile and profile.avatar and profile.avatar.name:
             avatar_path = profile.avatar.name  # avatars/2026/02/filename.jpg
@@ -88,11 +100,15 @@ class UserSerializer(serializers.ModelSerializer):
                 filename = parts[3]  # filename.jpg
                 
                 # Build URL to CORS-enabled media view
-                return get_avatar_url(request, f"/api/media/avatars/{year}/{month}/{filename}")
+                avatar_url = get_avatar_url(request, f"/api/media/avatars/{year}/{month}/{filename}")
+                logger.info(f"User {user_id}: returning custom avatar URL: {avatar_url}")
+                return avatar_url
         
         # Return default avatar URL - always accessible via API endpoint
         # This endpoint works in both development and production
-        return get_avatar_url(request, "/api/media/avatars/default")
+        default_url = get_avatar_url(request, "/api/media/avatars/default")
+        logger.info(f"User {user_id}: returning default avatar URL: {default_url}")
+        return default_url
 
     def get_email_notifications(self, obj):
         profile = getattr(obj, "profile", None)

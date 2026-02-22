@@ -78,6 +78,12 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
+# Allow Django to trust proxy headers from trusted sources (for Render/Heroku/etc)
+# This is important for build_absolute_uri() to work correctly behind reverse proxies
+SECURE_PROXY_HEADER_WHITELIST = ['HTTP_X_FORWARDED_PROTO']
+USE_X_FORWARDED_HOST = True
+USE_X_FORWARDED_PROTO = True
+
 ROOT_URLCONF = 'app.urls'
 
 TEMPLATES = [
