@@ -72,13 +72,13 @@ export function Sidebar() {
       {/* Footer */}
       <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-800 space-y-3">
         <div className="flex items-center gap-3">
-          {user?.avatar && user.avatar.trim() ? (
+          {user?.avatar && user.avatar.trim() && (user.avatar.startsWith('http') || user.avatar.startsWith('/')) ? (
             <img
               src={user.avatar}
               alt={user?.first_name && user?.last_name ? `${user.first_name} ${user.last_name}` : user?.email ?? "User"}
               className="w-8 h-8 rounded-full object-cover"
               onError={(e) => {
-                // Fallback to default if image fails to load
+                // Fallback to default if custom image fails to load
                 (e.target as HTMLImageElement).src = "/api/media/avatars/default";
               }}
             />

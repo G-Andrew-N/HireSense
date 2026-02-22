@@ -65,15 +65,24 @@ class UserSerializer(serializers.ModelSerializer):
                 filename = parts[3]  # filename.jpg
                 
                 # Build URL to CORS-enabled media view
-                if request:
-                    return request.build_absolute_uri(f"/api/media/avatars/{year}/{month}/{filename}")
-                else:
+                try:
+                    if request:
+                        return request.build_absolute_uri(f"/api/media/avatars/{year}/{month}/{filename}")
+                    else:
+                        return f"/api/media/avatars/{year}/{month}/{filename}"
+                except Exception:
+                    # Fallback if build_absolute_uri fails
                     return f"/api/media/avatars/{year}/{month}/{filename}"
         
-        # Return default avatar URL - either absolute or relative
-        if request:
-            return request.build_absolute_uri("/api/media/avatars/default")
-        else:
+        # Return default avatar URL - always accessible via API endpoint
+        # This endpoint works in both development and production
+        try:
+            if request:
+                return request.build_absolute_uri("/api/media/avatars/default")
+            else:
+                return "/api/media/avatars/default"
+        except Exception:
+            # Fallback if build_absolute_uri fails
             return "/api/media/avatars/default"
 
     def get_email_notifications(self, obj):
