@@ -569,127 +569,12 @@ def _fetch_indeed_jobs_for_user(
 
 
 def _run_match_analysis_for_user(user_id: int) -> dict:
-    """Run match analysis for a user: fetch latest resume, match against recent JobPostings."""
-    try:
-        user = User.objects.get(pk=user_id)
-    except User.DoesNotExist:
-        return {"error": "User not found"}
-
-    resume = _get_current_resume(user)
-    if not resume or not resume.raw_text:
-        return {"error": "No resume with text"}
-
-    from ai.profession import get_profession_for_job_search
-
-    # AI reviews document and determines profession; we fetch only for that profession
-    resume_text = resume.raw_text
-    profession = get_profession_for_job_search(resume_text)
-    # Don't auto-trigger since we're already in a match analysis run
-    fetch_result = _fetch_indeed_jobs_for_user(user_id, query_override=profession, auto_trigger_analysis=False)
-    # Only fallback to WWR if we got zero results and it's a dev role (expensive operation)
-    if fetch_result.get("stored", 0) == 0 and _is_developer_profession(profession):
-        logger.info("Primary fetch returned 0 results for developer role, trying fallback")
-        _fetch_wwr_programming_jobs()
-    # Match against jobs from all enabled sources - process more jobs to match fetch count
-    enabled_sources = _get_enabled_job_source_names()
-    recent = JobPosting.objects.filter(source__in=enabled_sources).order_by("-fetched_at")[:30]
-
+    """Run match analysis for a user using small chunks to avoid worker timeouts."""
     from django.conf import settings
 
-    from ai.job_matcher import match_resume_to_job
-    from ai.interview_predictor import estimate_interview_probability
-
-    provider = getattr(settings, "AI_PROVIDER", "openai") or "openai"
-    groq_pace_seconds = 5 if provider == "groq" else 0
-    groq_between_calls = 3 if provider == "groq" else 0
-
-    import time
-    created = 0
-    analyzed = 0
-    
-    logger.info(f"🔍 Starting job analysis for user {user_id} - {len(recent)} jobs to check")
-    
-    for idx, jp in enumerate(recent, 1):
-        if not jp.description:
-            logger.info(f"  ⏭️  [{idx}/{len(recent)}] Skipping job {jp.id} (no description): {jp.title}")
-            continue
-        if JobMatch.objects.filter(user=user, job_posting=jp).exists():
-            logger.info(f"  ✓ [{idx}/{len(recent)}] Already analyzed: {jp.title}")
-            continue
-
-        logger.info(f"  🔎 [{idx}/{len(recent)}] Analyzing: {jp.title} ({jp.company})")
-        job_desc = f"Job title: {jp.title or 'N/A'}\n\n{jp.description or ''}"
-        match_result = match_resume_to_job(resume_text, job_desc)
-        
-        # If analysis failed or score is very low (< 15), create a low-score record and skip
-        if not match_result:
-            logger.info(f"  ❌ [{idx}/{len(recent)}] Analysis failed: {jp.title}")
-            if groq_pace_seconds:
-                time.sleep(groq_pace_seconds)
-            continue
-        
-        # Only save matches with 50% or higher score to ensure CV relevance
-        match_score = match_result["match_score"]
-        
-        if match_score < 50:
-            analyzed += 1
-            logger.info(f"  ⏭️  [{idx}/{len(recent)}] Skipped low score ({match_score}%) - {jp.title}")
-            if groq_pace_seconds:
-                time.sleep(groq_pace_seconds)
-            continue
-        
-        if match_score >= 70:
-            if groq_between_calls:
-                time.sleep(groq_between_calls)
-            prob_result = estimate_interview_probability(match_result)
-            prob = prob_result["interview_probability"] if prob_result else 0
-        else:
-            prob = 0
-
-        job_match = JobMatch.objects.create(
-            user=user,
-            job_posting=jp,
-            job_site=None,
-            title=jp.title,
-            company=jp.company,
-            location=jp.location,
-            salary=jp.salary,
-            posted_date=jp.posted_date,
-            external_url=jp.external_url,
-            logo=jp.logo,
-            source=jp.source,
-            match_score=match_score,
-            interview_probability=prob,
-            skills=match_result.get("matched_skills", []),
-            missing_skills=match_result.get("missing_skills", []),
-        )
-        analyzed += 1
-        logger.info(f"  ✅ [{idx}/{len(recent)}] Match created - Score: {match_score}% | {jp.title}")
-        
-        # Create notification for high match (85%+) if user has alerts enabled
-        if match_score >= 85:
-            try:
-                profile = user.profile
-                if profile.high_match_alerts:
-                    _create_user_notification(
-                        user=user,
-                        title=f"🎯 High Match Found: {match_score}%",
-                        message=f"We found an excellent job match for you!\n\n"
-                                f"**{jp.title}** at **{jp.company}**\n"
-                                f"Match Score: {match_score}%\n"
-                                f"Location: {jp.location or 'Not specified'}\n\n"
-                                f"This job is a great fit for your skills and experience.",
-                        notification_type="alert",
-                    )
-                    logger.info(f"  🔔 High match alert created for {match_score}% match")
-            except Exception as e:
-                logger.warning(f"Failed to create high match notification: {e}")
-        
-        if groq_pace_seconds:
-            time.sleep(groq_pace_seconds)
-
-    logger.info(f"✨ Analysis complete for user {user_id}: {analyzed} jobs analyzed, {created} new matches")
-    return {"user_id": user_id, "matches_created": created, "jobs_analyzed": analyzed}
+    chunk_size = int(getattr(settings, "MATCH_ANALYSIS_CHUNK_SIZE", 3))
+    result = _run_match_analysis_chunk(user_id, chunk_size=chunk_size)
+    return {**result, "chunk_size": chunk_size}
 
 
 
@@ -857,7 +742,16 @@ def run_match_analysis_for_user(self, user_id: int) -> dict:
         logger.info("Resume %s not yet parsed, retrying match analysis in 10s...", resume.id)
         raise self.retry(countdown=10, exc=Exception("Resume not yet parsed"))
     
-    return _run_match_analysis_for_user(user_id)
+    result = _run_match_analysis_for_user(user_id)
+
+    # If there are likely more jobs to analyze, schedule another chunk soon.
+    if result.get("has_more"):
+        try:
+            self.apply_async(args=[user_id], countdown=12)
+        except Exception as e:
+            logger.warning("Could not enqueue follow-up match analysis chunk: %s", e)
+
+    return result
 
 
 @shared_task(bind=True, name="core.tasks._fetch_indeed_jobs_for_user_async")
