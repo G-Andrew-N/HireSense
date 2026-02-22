@@ -9,11 +9,12 @@ import {
   FileText,
   CheckCircle2,
   AlertCircle,
+  Download,
   Sparkles,
   Loader2,
   Trash2,
 } from "lucide-react";
-import { getResumes, uploadResume, getResumeReview, deleteResume, setResumePrimary, type Resume, type MatchAnalysisStatus, type ResumeReview } from "../../lib/api";
+import { getResumes, uploadResume, downloadResume, getResumeReview, deleteResume, setResumePrimary, type Resume, type MatchAnalysisStatus, type ResumeReview } from "../../lib/api";
 import { useScan } from "../../lib/scan-context";
 
 export function Resume() {
@@ -119,6 +120,15 @@ export function Resume() {
       toast.success("Resume review updated");
     } else {
       toast.error("Failed to load resume review");
+    }
+  };
+
+  const handleDownload = async (r: Resume) => {
+    try {
+      await downloadResume(r.id, r.original_filename || "resume.pdf");
+      toast.success("Download started");
+    } catch {
+      toast.error("Download failed");
     }
   };
 
@@ -263,6 +273,15 @@ export function Resume() {
                         >
                           <Sparkles className="w-4 h-4 sm:mr-2" />
                           <span className="hidden sm:inline">Review</span>
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 sm:flex-initial"
+                          onClick={() => handleDownload(current)}
+                        >
+                          <Download className="w-4 h-4 sm:mr-2" />
+                          <span className="hidden sm:inline">Download</span>
                         </Button>
                         <Button
                           variant="outline"
@@ -458,6 +477,15 @@ export function Resume() {
                             >
                               <Sparkles className="w-4 h-4 sm:mr-2" />
                               <span className="hidden sm:inline">Review</span>
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex-1 sm:flex-initial"
+                              onClick={() => handleDownload(r)}
+                            >
+                              <Download className="w-4 h-4 sm:mr-2" />
+                              <span className="hidden sm:inline">Download</span>
                             </Button>
                             <Button
                               variant="outline"
