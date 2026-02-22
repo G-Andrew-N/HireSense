@@ -30,11 +30,33 @@ class PipelineResult(NamedTuple):
 def process_resume_file(resume: Resume) -> PipelineResult:
     """
     Full pipeline: extract text from binary file data -> AI parse -> return result.
+    Supports both new file_data (BinaryField) and legacy file (FileField).
 
     Does NOT save to the Resume instance; caller should update and save.
     """
-    # Stage 1: Extract text from binary file data
-    if not resume.file_data:
+    # Stage 1: Get binary file data (prefer file_data, fallback to file)
+    file_data = None
+    
+    if resume.file_data:
+        # New approach: binary data stored in database
+        file_data = resume.file_data
+    elif resume.file:
+        # Fallback: read from FileField (legacy Cloudinary storage)
+        try:
+            from io import BytesIO
+            resume.file.open("rb")
+            file_data = resume.file.read()
+            resume.file.close()
+        except Exception as e:
+            logger.exception("Failed to read legacy file field: %s", e)
+            return PipelineResult(
+                raw_text="",
+                parsed_content={},
+                structure_hints={},
+                success=False,
+                error="Failed to read file",
+            )
+    else:
         return PipelineResult(
             raw_text="",
             parsed_content={},
@@ -47,7 +69,7 @@ def process_resume_file(resume: Resume) -> PipelineResult:
         from io import BytesIO
         
         # Create a seekable BytesIO object from binary data for extraction libraries
-        file_obj = BytesIO(resume.file_data)
+        file_obj = BytesIO(file_data)
         extraction = extract_with_structure(file_obj)
     except Exception as e:
         logger.exception("Resume file read failed: %s", e)

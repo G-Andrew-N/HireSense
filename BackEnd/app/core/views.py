@@ -757,11 +757,25 @@ class ResumeViewSet(ModelViewSet):
         from io import BytesIO
         
         resume = self.get_object()
-        if not resume.file_data:
+        file_data = None
+        
+        # Prefer new file_data (BinaryField), fallback to legacy file (FileField)
+        if resume.file_data:
+            file_data = resume.file_data
+        elif resume.file:
+            try:
+                resume.file.open("rb")
+                file_data = resume.file.read()
+                resume.file.close()
+            except Exception as e:
+                RESUME_LOG.exception("Failed to read legacy file field: %s", e)
+                return Response({"detail": "File not found."}, status=status.HTTP_404_NOT_FOUND)
+        else:
             return Response({"detail": "No file attached."}, status=status.HTTP_404_NOT_FOUND)
+        
         try:
             # Create a file-like object from binary data
-            file_obj = BytesIO(resume.file_data)
+            file_obj = BytesIO(file_data)
             filename = resume.original_filename or f"resume_{resume.id}.bin"
             response = FileResponse(file_obj, as_attachment=True, filename=filename)
             return response

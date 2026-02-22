@@ -140,7 +140,8 @@ class JobSite(models.Model):
 class Resume(models.Model):
     """
     User resume file with versioning and optional parsed content for matching.
-    File is stored as binary data in the database for persistence and easy access.
+    file_data: Binary storage in database (new, preferred)
+    file: FileField for backwards compatibility (deprecated, will be removed)
     """
 
     user = models.ForeignKey(
@@ -148,7 +149,16 @@ class Resume(models.Model):
         on_delete=models.CASCADE,
         related_name="resumes",
     )
+    file = models.FileField(
+        upload_to="resumes/%Y/%m/",
+        max_length=500,
+        null=True,
+        blank=True,
+        help_text="Deprecated: use file_data instead",
+    )
     file_data = models.BinaryField(
+        null=True,
+        blank=True,
         help_text="Resume file content (PDF, DOC, DOCX, TXT) stored as binary data in database."
     )
     original_filename = models.CharField(max_length=255, blank=True)
