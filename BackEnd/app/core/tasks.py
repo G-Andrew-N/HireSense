@@ -658,8 +658,7 @@ def _run_match_analysis_chunk(user_id: int, chunk_size: int = 3) -> dict:
         # Only save matches with 50% or higher score to ensure CV relevance
         if match_score < 50:
             logger.info(f"  ⏭️  [{analyzed}] Skipped low score ({match_score}%) - {jp.title}")
-            if groq_pace_seconds:
-                time.sleep(groq_pace_seconds)
+            # Don't sleep after skips - we want to analyze next job quickly
             continue
 
         if match_score >= 70:
