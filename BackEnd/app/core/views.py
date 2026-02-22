@@ -635,16 +635,21 @@ class ResumeViewSet(ModelViewSet):
     def perform_create(self, serializer):
         try:
             # Extract file bytes BEFORE saving (so we have them for processing)
-            file_upload = self.request.FILES.get("file_upload")
+            file_upload = self.request.FILES.get("file_upload") or self.request.FILES.get("file")
             file_bytes = None
             if file_upload:
+                from .resume_utils import validate_resume_file
+
+                is_valid, err = validate_resume_file(file_upload)
+                if not is_valid:
+                    raise UploadFailedError(err)
                 file_bytes = file_upload.read()
                 file_upload.seek(0)  # Reset for FileField to re-read
                 RESUME_LOG.info("📥 Captured file bytes from request: %d bytes", len(file_bytes))
             else:
-                RESUME_LOG.warning("⚠ No file_upload in request.FILES")
+                RESUME_LOG.warning("⚠ No file in request.FILES (keys=%s)", list(self.request.FILES.keys()))
             
-            instance = serializer.save()
+            instance = serializer.save(file=file_upload) if file_upload else serializer.save()
             RESUME_LOG.info("✓ Resume saved: id=%s, file=%s", instance.id, instance.file.name if instance.file else "None")
         except Exception as e:
             RESUME_LOG.exception("Resume save failed: %s", e, exc_info=True)

@@ -169,10 +169,11 @@ class ResumeSerializer(serializers.ModelSerializer):
         version = (last.version + 1) if last else 1
         
         file_upload = validated_data.pop("file_upload", None)
-        if file_upload:
+        file_obj = file_upload or validated_data.get("file")
+        if file_obj:
             # Store original filename and file using FileField
-            validated_data["original_filename"] = file_upload.name
-            validated_data["file"] = file_upload
+            validated_data["original_filename"] = file_obj.name
+            validated_data["file"] = file_obj
         
         validated_data["user"] = user
         validated_data["version"] = version
