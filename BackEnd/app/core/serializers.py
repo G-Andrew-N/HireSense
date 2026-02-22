@@ -6,6 +6,29 @@ from .models import JobMatch, JobSite, Resume, ResumeInsight, UserProfile, Syste
 User = get_user_model()
 
 
+def get_avatar_url(request, path_suffix="/api/media/avatars/default"):
+    """
+    Build an absolute URL for avatar resources.
+    Handles edge cases where request object might not be available or build_absolute_uri fails.
+    
+    Args:
+        request: DRF request object (may be None)
+        path_suffix: Relative path including leading slash (e.g., "/api/media/avatars/default")
+    
+    Returns:
+        str: Absolute or relative URL for the avatar resource
+    """
+    if not request:
+        return path_suffix
+    
+    try:
+        # Try to build absolute URI using request object
+        return request.build_absolute_uri(path_suffix)
+    except Exception:
+        # Fallback to relative path if build_absolute_uri fails
+        return path_suffix
+
+
 # ----- Auth -----
 
 
@@ -65,25 +88,11 @@ class UserSerializer(serializers.ModelSerializer):
                 filename = parts[3]  # filename.jpg
                 
                 # Build URL to CORS-enabled media view
-                try:
-                    if request:
-                        return request.build_absolute_uri(f"/api/media/avatars/{year}/{month}/{filename}")
-                    else:
-                        return f"/api/media/avatars/{year}/{month}/{filename}"
-                except Exception:
-                    # Fallback if build_absolute_uri fails
-                    return f"/api/media/avatars/{year}/{month}/{filename}"
+                return get_avatar_url(request, f"/api/media/avatars/{year}/{month}/{filename}")
         
         # Return default avatar URL - always accessible via API endpoint
         # This endpoint works in both development and production
-        try:
-            if request:
-                return request.build_absolute_uri("/api/media/avatars/default")
-            else:
-                return "/api/media/avatars/default"
-        except Exception:
-            # Fallback if build_absolute_uri fails
-            return "/api/media/avatars/default"
+        return get_avatar_url(request, "/api/media/avatars/default")
 
     def get_email_notifications(self, obj):
         profile = getattr(obj, "profile", None)
