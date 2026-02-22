@@ -813,16 +813,23 @@ class ResumeViewSet(ModelViewSet):
             return Response({"detail": "No file attached."}, status=status.HTTP_404_NOT_FOUND)
         
         try:
-            # Try to get Cloudinary URL
+            # Get the file path/URL
+            file_name = getattr(resume.file, "name", None)
             file_url = getattr(resume.file, "url", None)
             
-            # Check if URL exists and looks valid (not empty, starts with http, is a Cloudinary URL)
+            # Check if file.name is already a full Cloudinary URL (not a relative path)
+            if file_name and isinstance(file_name, str) and file_name.startswith("http"):
+                # file.name is already the full Cloudinary URL, use it directly
+                logger.info(f"📎 Using stored Cloudinary URL directly: {file_name[:80]}...")
+                return HttpResponseRedirect(file_name)
+            
+            # Check if file.url is available and valid (not empty, starts with http)
             if file_url and isinstance(file_url, str) and file_url.strip() and file_url.startswith("http"):
                 logger.info(f"📎 Redirecting to Cloudinary URL: {file_url[:80]}...")
                 return HttpResponseRedirect(file_url)
             
             # Fallback: URL is missing or invalid, try to stream the file directly
-            logger.info(f"⚠️  Cloudinary URL not available (url={repr(file_url)}), streaming file directly")
+            logger.info(f"⚠️  Cloudinary URL not available (name={repr(file_name)}, url={repr(file_url)}), streaming file directly")
             
             # Try to open and read the file from storage
             try:
