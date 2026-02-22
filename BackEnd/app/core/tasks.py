@@ -719,7 +719,7 @@ def _run_match_analysis_chunk(user_id: int, chunk_size: int = 3) -> dict:
     # Provide helpful message when jobs were analyzed but none passed threshold
     message = None
     if analyzed > 0 and processed == 0:
-        message = f"Analyzed {analyzed} job(s), but none matched your CV well enough (need 50%+ relevance). Try again later for fresh job postings."
+        message = "No new available jobs for now, try again later."
     elif analyzed > 0 and processed < chunk_size:
         logger.info(f"  ℹ️  Analyzed {analyzed} jobs, created {processed} matches (some jobs didn't meet 50% threshold)")
 

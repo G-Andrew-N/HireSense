@@ -471,7 +471,7 @@ export function JobMatches() {
                 ) : (
                   <TrendingUp className="w-4 h-4 mr-2" />
                 )}
-                {isScanning ? "Analyzing..." : "Load 2 More Jobs"}
+                {isScanning ? "Analyzing..." : "Load Jobs"}
               </Button>
             </TooltipTrigger>
             {requiresResume ? (
@@ -480,7 +480,7 @@ export function JobMatches() {
               </TooltipContent>
             ) : isScanning ? (
               <TooltipContent side="top">
-                Searching and analyzing 2 jobs...
+                Searching and analyzing jobs...
               </TooltipContent>
             ) : null}
           </Tooltip>

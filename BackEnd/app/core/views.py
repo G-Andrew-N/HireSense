@@ -574,42 +574,90 @@ class JobMatchAnalysisTriggerView(APIView):
     def post(self, request):
         from .tasks import _run_match_analysis_chunk, _run_scan_all_limited, _fetch_indeed_jobs_for_user
         from .serializers import JobMatchSerializer
+        import signal
 
         chunk_param = request.query_params.get("chunk")
-        chunk_size = int(chunk_param) if chunk_param and str(chunk_param).isdigit() else 2
+        chunk_size = int(chunk_param) if chunk_param and str(chunk_param).isdigit() else 3
         chunk_size = min(max(chunk_size, 1), 5)
 
+        # Track partial results in case of timeout
+        partial_matches = []
+        timeout_occurred = False
+        
+        def timeout_handler(signum, frame):
+            nonlocal timeout_occurred
+            timeout_occurred = True
+            raise TimeoutError("Search window exceeded")
+        
         try:
-            # Step 1: scan for fresh jobs (reduced to prevent timeout)
-            # Only scan 1 job per source to minimize network time
-            _run_scan_all_limited(max_results_per_source=1, max_total=chunk_size)
-            _fetch_indeed_jobs_for_user(
-                request.user.id,
-                auto_trigger_analysis=False,
-                max_total_results=chunk_size,
-            )
-
-            # Step 2: analyze up to chunk_size jobs and return them
-            result = _run_match_analysis_chunk(request.user.id, chunk_size)
-            if "error" in result:
-                return Response({
-                    "detail": result["error"],
-                    "status": "failure",
-                    "message": "Search failed, the issue will be resolved soon."
-                }, status=status.HTTP_400_BAD_REQUEST)
+            # Set a 25-second alarm to ensure we respond before Gunicorn kills us (30s)
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(25)
             
-            data = JobMatchSerializer(result["matches"], many=True).data
-            response_data = {
-                "matches": data,
-                "has_more": result["has_more"],
-                "status": "success"
-            }
-            # Include message if jobs were analyzed but none passed threshold
-            if result.get("message"):
-                response_data["message"] = result["message"]
-            return Response(response_data)
+            try:
+                # Step 1: scan for fresh jobs (reduced to prevent timeout)
+                # Only scan 1 job per source to minimize network time
+                _run_scan_all_limited(max_results_per_source=1, max_total=chunk_size)
+                _fetch_indeed_jobs_for_user(
+                    request.user.id,
+                    auto_trigger_analysis=False,
+                    max_total_results=chunk_size,
+                )
+
+                # Step 2: analyze up to chunk_size jobs and return them
+                result = _run_match_analysis_chunk(request.user.id, chunk_size)
+                
+                # Cancel the alarm - we finished in time
+                signal.alarm(0)
+                
+                if "error" in result:
+                    return Response({
+                        "detail": result["error"],
+                        "status": "failure",
+                        "message": "Search failed, the issue will be resolved soon."
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                data = JobMatchSerializer(result["matches"], many=True).data
+                
+                # If no jobs were found, return helpful message
+                if len(data) == 0:
+                    return Response({
+                        "matches": [],
+                        "has_more": result.get("has_more", False),
+                        "status": "success",
+                        "message": "No new available jobs for now, try again later."
+                    })
+                
+                response_data = {
+                    "matches": data,
+                    "has_more": result["has_more"],
+                    "status": "success"
+                }
+                # Include message if jobs were analyzed but none passed threshold
+                if result.get("message"):
+                    response_data["message"] = result["message"]
+                return Response(response_data)
+            
+            except TimeoutError:
+                # Cancel the alarm
+                signal.alarm(0)
+                
+                # Return whatever we found before timeout
+                logger.warning(f"Search timed out for user {request.user.id}, returning partial results")
+                return Response({
+                    "matches": partial_matches,  # May be empty if timeout was early
+                    "has_more": True,
+                    "status": "success",  # Still success, just didn't finish
+                    "message": "No new available jobs for now, try again later."
+                })
         
         except Exception as e:
+            # Cancel the alarm on any error
+            try:
+                signal.alarm(0)
+            except:
+                pass
+            
             logger.exception(f"Search failed for user {request.user.id}: {e}")
             return Response({
                 "detail": str(e),
