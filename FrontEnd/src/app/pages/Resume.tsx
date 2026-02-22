@@ -14,7 +14,7 @@ import {
   Loader2,
   Trash2,
 } from "lucide-react";
-import { getResumes, uploadResume, getResumeReview, deleteResume, setResumePrimary, reparseResume, type Resume, type MatchAnalysisStatus, type ResumeReview } from "../../lib/api";
+import { getResumes, uploadResume, getResumeReview, deleteResume, setResumePrimary, type Resume, type MatchAnalysisStatus, type ResumeReview } from "../../lib/api";
 import { useScan } from "../../lib/scan-context";
 
 export function Resume() {
@@ -24,7 +24,6 @@ export function Resume() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [settingPrimaryId, setSettingPrimaryId] = useState<number | null>(null);
-  const [reparsingId, setReparsingId] = useState<number | null>(null);
   const [review, setReview] = useState<ResumeReview | null>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
@@ -123,26 +122,6 @@ export function Resume() {
       toast.error("Failed to load resume review");
     }
   };
-
-  const handleReparse = async (r: Resume) => {
-    setReparsingId(r.id);
-    try {
-      const response = await reparseResume(r.id);
-      toast.success("Resume re-analyzed successfully! Skills and details updated.");
-      // Reload the resume to get updated parsed_content
-      load();
-      // Also reload the review
-      if (current?.id === r.id) {
-        await loadReview(r.id);
-      }
-    } catch (err) {
-      console.error("Reparse error:", err);
-      toast.error("Failed to re-analyze resume");
-    } finally {
-      setReparsingId(null);
-    }
-  };
-
 
   const handleRemove = async (r: Resume, label: string) => {
     if (!window.confirm(`Remove ${label}? You can upload a new file anytime.`)) return;
@@ -511,91 +490,6 @@ export function Resume() {
                     </div>
                   </div>
                 </>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950 dark:to-teal-950 border-emerald-100 dark:border-emerald-900">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2">AI Analysis</CardTitle>
-                {current && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleReparse(current)}
-                    disabled={reparsingId === current.id}
-                    className="text-xs"
-                  >
-                    {reparsingId === current.id ? (
-                      <>
-                        <Loader2 className="w-3 h-3 animate-spin mr-1" />
-                        Re-analyzing...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-3 h-3 mr-1" />
-                        Re-Analyze
-                      </>
-                    )}
-                  </Button>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {current?.parsed_content && typeof current.parsed_content === 'object' && 
-               'skills' in current.parsed_content && 
-               Array.isArray(current.parsed_content.skills) && 
-               current.parsed_content.skills.length > 0 ? (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">Extracted Skills</p>
-                  <div className="flex flex-wrap gap-2">
-                    {(current.parsed_content.skills as string[]).slice(0, 10).map((s, idx) => (
-                      <span key={`${s}-${idx}`} className="px-2 py-0.5 bg-white dark:bg-gray-800 rounded text-xs">
-                        {s}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Upload a resume to get AI-powered parsing and improvement suggestions.
-                </p>
-              )}
-              {resumes.length > 0 && (
-                <div className="pt-4 border-t">
-                  <p className="text-sm font-medium mb-2">Version History</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-                    Which resume file each version refers to:
-                  </p>
-                  <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
-                    {resumes.slice(0, 10).map((r) => (
-                      <div key={r.id} className="flex items-center justify-between gap-2 flex-wrap">
-                        <span className="min-w-0 truncate" title={resumeDisplayName(r)}>
-                          <span className="font-medium text-gray-700 dark:text-gray-300">Version {r.version}</span>
-                          <span className="mx-1.5">·</span>
-                          <span className="truncate">{resumeDisplayName(r)}</span>
-                          <span className="mx-1.5">·</span>
-                          <span>{new Date(r.uploaded_at).toLocaleDateString()}</span>
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0 text-gray-500 hover:text-red-600 dark:hover:text-red-400 shrink-0"
-                          onClick={() => handleRemove(r, `Version ${r.version} (${resumeDisplayName(r)})`)}
-                          disabled={deletingId === r.id}
-                          title={`Remove version ${r.version}`}
-                        >
-                          {deletingId === r.id ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="w-4 h-4" />
-                          )}
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
               )}
             </CardContent>
           </Card>
