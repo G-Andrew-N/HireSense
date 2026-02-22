@@ -298,26 +298,28 @@ class PasswordResetRequestView(APIView):
         serializer.is_valid(raise_exception=True)
         email = serializer.validated_data["email"].lower()
         user = User.objects.filter(email=email).first()
-        if user is not None and user.is_active:
-            token = default_token_generator.make_token(user)
-            uid = urlsafe_base64_encode(force_bytes(user.pk))
-            frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:5173").rstrip("/")
-            reset_link = f"{frontend_url}/reset-password/{uid}/{token}/"
-            # Queue email as async Celery task to avoid timeout
-            try:
-                send_password_reset_email.delay(user.email, reset_link)
-            except Exception as e:
-                # Fallback to async threading if Celery/Redis is unavailable
-                logger.warning(f"Celery task queue unavailable, using threading fallback: {e}")
-                email_thread = threading.Thread(
-                    target=self._send_password_reset_email,
-                    args=(user.email, reset_link),
-                    daemon=True,
-                )
-                email_thread.start()
-        return Response(
-            {"detail": "If an account exists with this email, you will receive a reset link."}
-        )
+        if user is None or not user.is_active:
+            return Response(
+                {"detail": "No account found for this email."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        token = default_token_generator.make_token(user)
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:5173").rstrip("/")
+        reset_link = f"{frontend_url}/reset-password/{uid}/{token}/"
+        # Queue email as async Celery task to avoid timeout
+        try:
+            send_password_reset_email.delay(user.email, reset_link)
+        except Exception as e:
+            # Fallback to async threading if Celery/Redis is unavailable
+            logger.warning(f"Celery task queue unavailable, using threading fallback: {e}")
+            email_thread = threading.Thread(
+                target=self._send_password_reset_email,
+                args=(user.email, reset_link),
+                daemon=True,
+            )
+            email_thread.start()
+        return Response({"detail": "Reset link sent."})
 
 
 class PasswordResetConfirmView(APIView):

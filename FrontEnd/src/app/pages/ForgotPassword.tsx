@@ -19,8 +19,10 @@ export function ForgotPassword() {
     try {
       await requestPasswordReset(email);
       setIsSubmitted(true);
-    } catch {
-      toast.error("Could not send reset email. Please try again.");
+    } catch (err: unknown) {
+      const msg = (err as { body?: { detail?: string } })?.body?.detail
+        ?? "Could not send reset email. Please try again.";
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
