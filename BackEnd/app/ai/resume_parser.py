@@ -18,7 +18,11 @@ SYSTEM_PROMPT = (
     "\"experience\": [{\"title\": \"\", \"company\": \"\", \"dates\": \"\", \"description\": \"\"}], "
     "\"education\": [{\"degree\": \"\", \"institution\": \"\", \"dates\": \"\"}], "
     "\"summary\": \"\"}. "
-    "If a section is missing or unclear, use empty list/string."
+    "IMPORTANT: Extract ALL technical skills, tools, technologies, programming languages, frameworks, "
+    "and relevant competencies mentioned ANYWHERE in the resume. Look for skills in experience descriptions, "
+    "project details, certifications, and dedicated skills sections. "
+    "If a section is missing or unclear, use empty list/string. "
+    "For skills, be comprehensive and extract everything relevant, even if mentioned briefly."
 )
 
 USER_PROMPT_TEMPLATE = "Extract structured data from this resume:\n\n{resume_text}"
@@ -32,8 +36,9 @@ USER_PROMPT_TEMPLATE = "Extract structured data from this resume:\n\n{resume_tex
 def _call_ai(resume_text: str) -> str:
     """Call AI chat completion with retries (OpenAI or Gemini based on AI_PROVIDER)."""
     provider = getattr(settings, "AI_PROVIDER", "openai") or "openai"
-    # Groq has tighter TPM limits; reduce prompt size to avoid JSON truncation.
-    max_resume_chars = 6000 if provider == "groq" else 15000
+    # Increased limits to handle larger resumes - most resumes are under 50K chars
+    # Groq has tighter limits but can still handle 20K characters comfortably
+    max_resume_chars = 20000 if provider == "groq" else 50000
     return chat_completion_json(
         system=SYSTEM_PROMPT,
         user=USER_PROMPT_TEMPLATE.format(resume_text=resume_text[:max_resume_chars]),
@@ -54,8 +59,10 @@ def parse_resume(resume_text: str) -> dict | None:
         return None
 
     provider = getattr(settings, "AI_PROVIDER", "openai") or "openai"
-    max_resume_chars = 6000 if provider == "groq" else 15000
-    cache_key = "parse_resume:v1:" + hashlib.sha256(resume_text[:max_resume_chars].encode()).hexdigest()
+    # Match the limits used in _call_ai for consistent caching
+    max_resume_chars = 20000 if provider == "groq" else 50000
+    # Updated cache version to v2 to invalidate old shorter-text parses
+    cache_key = "parse_resume:v2:" + hashlib.sha256(resume_text[:max_resume_chars].encode()).hexdigest()
     cached = cache.get(cache_key)
     if cached is not None:
         return cached

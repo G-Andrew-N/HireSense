@@ -426,6 +426,11 @@ export async function setResumePrimary(id: number): Promise<Resume> {
   return apiRequest<Resume>(`/resumes/${id}/set_primary/`, { method: 'POST' });
 }
 
+/** Re-parse resume with updated AI parser (clears cache and forces fresh analysis). */
+export async function reparseResume(id: number): Promise<{ detail: string; resume: Resume }> {
+  return apiRequest<{ detail: string; resume: Resume }>(`/resumes/${id}/reparse/`, { method: 'POST' });
+}
+
 // Job matches
 export interface JobMatch {
   id: number | null;  // null for pending jobs (not yet analyzed)
