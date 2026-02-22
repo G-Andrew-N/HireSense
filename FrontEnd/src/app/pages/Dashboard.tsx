@@ -18,7 +18,7 @@ import {
 import { Link } from "react-router";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { motion } from "motion/react";
-import { getJobMatches, type JobMatch } from "../../lib/api";
+import { getJobMatches, getResumes, type JobMatch, type Resume } from "../../lib/api";
 
 /** Chart data: applications = job matches the user has marked as applied, by date applied. */
 function buildChartDataFromMatches(matches: JobMatch[]): { name: string; applications: number }[] {
@@ -72,24 +72,45 @@ function toDisplayMatch(j: JobMatch) {
 
 export function Dashboard() {
   const [matches, setMatches] = useState<JobMatch[]>([]);
+  const [resumes, setResumes] = useState<Resume[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getJobMatches()
-      .then(setMatches)
-      .catch(() => toast.error("Failed to load matches"))
-      .finally(() => setLoading(false));
+    const loadData = async () => {
+      try {
+        const [matchesData, resumesData] = await Promise.all([
+          getJobMatches(),
+          getResumes(),
+        ]);
+        setMatches(matchesData);
+        setResumes(resumesData);
+      } catch (err) {
+        toast.error("Failed to load data");
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadData();
   }, []);
 
   // Listen for resume deletion event and refresh data
   useEffect(() => {
-    const handleResumeCleared = () => {
+    const handleResumeCleared = async () => {
       console.log("📢 Dashboard received hiresense:resumes-cleared - refreshing data");
       setLoading(true);
-      getJobMatches()
-        .then(setMatches)
-        .catch(() => toast.error("Failed to refresh matches"))
-        .finally(() => setLoading(false));
+      try {
+        const [matchesData, resumesData] = await Promise.all([
+          getJobMatches(),
+          getResumes(),
+        ]);
+        setMatches(matchesData);
+        setResumes(resumesData);
+      } catch (err) {
+        toast.error("Failed to refresh data");
+      } finally {
+        setLoading(false);
+      }
     };
 
     window.addEventListener("hiresense:resumes-cleared", handleResumeCleared);
@@ -138,8 +159,42 @@ export function Dashboard() {
       </motion.div>
 
       <div className="flex-1 p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 pb-20 lg:pb-8">
-        {/* Stats Cards */}
-        <motion.div
+        {/* No Resume Empty State */}
+        {!loading && resumes.length === 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="col-span-full"
+          >
+            <Card className="border-dashed border-2 border-emerald-300 dark:border-emerald-700 bg-emerald-50/50 dark:bg-emerald-950/50">
+              <CardContent className="pt-12 pb-12 text-center">
+                <motion.div
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+                >
+                  <FileText className="w-16 h-16 text-emerald-600 dark:text-emerald-400 mx-auto mb-4" />
+                </motion.div>
+                <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+                  Ready to find your next opportunity?
+                </h3>
+                <p className="text-gray-600 dark:text-gray-400 mb-6 max-w-md mx-auto">
+                  Upload your resume to unlock AI-powered job matching, match scoring, and insights tailored to your profile.
+                </p>
+                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-6 text-lg h-auto" asChild>
+                  <Link to="/dashboard/resume">
+                    <Upload className="w-5 h-5 mr-2" />
+                    Upload Your Resume
+                  </Link>
+                </Button>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* Stats Cards - Only show if resumes exist */}
+        {!loading && resumes.length > 0 && (
           variants={containerVariants}
           initial="hidden"
           animate="visible"
@@ -240,8 +295,10 @@ export function Dashboard() {
             </Card>
           </motion.div>
         </motion.div>
+        )}
 
         {/* Activity Chart and AI Insights */}
+        {!loading && resumes.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -297,8 +354,10 @@ export function Dashboard() {
             </Card>
           </motion.div>
         </motion.div>
+        )}
 
         {/* Top Matches */}
+        {!loading && resumes.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -374,6 +433,7 @@ export function Dashboard() {
             </CardContent>
           </Card>
         </motion.div>
+        )}
       </div>
     </div>
   );
