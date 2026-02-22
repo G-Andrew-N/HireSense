@@ -115,6 +115,7 @@ export function Login() {
               animate={{ opacity: 1 }}
               transition={{ delay: 0.5 }}
               onSubmit={handleLogin} 
+              noValidate
               className="space-y-6"
             >
               <div className="space-y-2">

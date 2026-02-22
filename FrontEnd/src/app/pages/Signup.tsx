@@ -169,6 +169,7 @@ export function Signup() {
               animate={{ opacity: 1 }}
               transition={{ delay: 0.5 }}
               onSubmit={handleSignup} 
+              noValidate
               className="space-y-5"
             >
               <div className="flex flex-col items-center gap-4">

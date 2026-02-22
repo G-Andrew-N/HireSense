@@ -84,7 +84,7 @@ export function ForgotPassword() {
                 </div>
 
                 {/* Form */}
-                <form onSubmit={handleSubmit} className="space-y-6">
+                <form onSubmit={handleSubmit} className="space-y-6" noValidate>
                   <div className="space-y-2">
                     <Label htmlFor="email">Email address</Label>
                     <div className="relative">
