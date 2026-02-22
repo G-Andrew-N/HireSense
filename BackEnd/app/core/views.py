@@ -1382,10 +1382,11 @@ class UserNotificationViewSet(ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        """Only return notifications for the current user."""
-        return UserNotification.objects.filter(user=self.request.user).select_related(
-            'notification', 'notification__created_by'
-        )
+        """Only return notifications for the current user that were sent by superusers (admins)."""
+        return UserNotification.objects.filter(
+            user=self.request.user,
+            notification__created_by__is_superuser=True  # Only admin-created notifications
+        ).select_related('notification', 'notification__created_by')
 
     @action(detail=True, methods=['post'])
     def mark_as_read(self, request, pk=None):
