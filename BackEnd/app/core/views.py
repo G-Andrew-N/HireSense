@@ -23,7 +23,7 @@ class UploadFailedError(APIException):
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from django.http import FileResponse, HttpResponseRedirect
+from django.http import FileResponse, HttpResponse, HttpResponseRedirect, StreamingHttpResponse
 from rest_framework.decorators import action
 from rest_framework.views import APIView
 from rest_framework.mixins import UpdateModelMixin
@@ -815,6 +815,7 @@ class ResumeViewSet(ModelViewSet):
     def download(self, request, pk=None):
         """Secure download: only the owning user can download."""
         from urllib.parse import urlparse
+        import requests
         
         resume = self.get_object()
         if not resume.file:
@@ -845,22 +846,51 @@ class ResumeViewSet(ModelViewSet):
                 resume.file.open("rb")
                 filename = resume.original_filename or resume.file.name.split("/")[-1]
                 logger.info(f"📁 Streaming file directly: {filename}")
-                return FileResponse(resume.file, as_attachment=True, filename=filename)
+                return FileResponse(resume.file, as_attachment=False, filename=filename)
             except Exception as e:
-                logger.warning(f"⚠️  Direct stream failed, attempting redirect: {e}")
+                logger.warning(
+                    "⚠️  Direct stream failed, attempting Cloudinary proxy: %r",
+                    e,
+                )
 
-            # If streaming fails, try redirecting to Cloudinary as a fallback.
+            # If direct streaming fails, proxy the Cloudinary file through the API.
+            fixed_url = None
             if file_name and isinstance(file_name, str):
                 fixed_url = fix_and_validate_url(file_name)
-                if fixed_url:
-                    logger.info(f"📎 Using stored Cloudinary URL: {fixed_url[:80]}...")
-                    return HttpResponseRedirect(fixed_url)
-
-            if file_url and isinstance(file_url, str):
+            if not fixed_url and file_url and isinstance(file_url, str):
                 fixed_url = fix_and_validate_url(file_url)
-                if fixed_url:
-                    logger.info(f"📎 Redirecting to Cloudinary URL: {fixed_url[:80]}...")
-                    return HttpResponseRedirect(fixed_url)
+
+            if fixed_url:
+                try:
+                    cloudinary_response = requests.get(fixed_url, stream=True, timeout=20)
+                    cloudinary_response.raise_for_status()
+                except Exception as e:
+                    logger.error("❌ Cloudinary fetch failed: %r", e)
+                else:
+                    filename = (
+                        resume.original_filename
+                        or os.path.basename(urlparse(fixed_url).path)
+                        or "resume"
+                    )
+                    content_type = cloudinary_response.headers.get(
+                        "Content-Type", "application/octet-stream"
+                    )
+                    content_length = cloudinary_response.headers.get("Content-Length")
+
+                    def stream():
+                        try:
+                            for chunk in cloudinary_response.iter_content(chunk_size=8192):
+                                if chunk:
+                                    yield chunk
+                        finally:
+                            cloudinary_response.close()
+
+                    response = StreamingHttpResponse(stream(), content_type=content_type)
+                    if content_length:
+                        response["Content-Length"] = content_length
+                    response["Content-Disposition"] = f'inline; filename="{filename}"'
+                    logger.info(f"📎 Proxied Cloudinary file: {filename}")
+                    return response
 
             logger.error(
                 "❌ Cloudinary URL not available or invalid and streaming failed (name=%s, url=%s)",
@@ -884,6 +914,25 @@ class ResumeViewSet(ModelViewSet):
                 {"detail": f"Download failed: {str(e)[:100]}"}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+    @action(detail=True, methods=["get"], url_path="export-text")
+    def export_text(self, request, pk=None):
+        """Export parsed resume text as a plain text file."""
+        resume = self.get_object()
+        text = resume.raw_text or ""
+        if not text.strip():
+            return Response(
+                {"detail": "Resume text not available yet."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        base_name = resume.original_filename or "resume"
+        base_name = os.path.splitext(base_name)[0] or "resume"
+        filename = f"{base_name}.txt"
+
+        response = HttpResponse(text, content_type="text/plain; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
     @action(detail=True, methods=["get"])
     def review(self, request, pk=None):

@@ -14,7 +14,7 @@ import {
   Loader2,
   Trash2,
 } from "lucide-react";
-import { getResumes, uploadResume, downloadResume, getResumeReview, deleteResume, setResumePrimary, type Resume, type MatchAnalysisStatus, type ResumeReview } from "../../lib/api";
+import { getResumes, uploadResume, downloadResume, exportResumeText, getResumeReview, deleteResume, setResumePrimary, type Resume, type MatchAnalysisStatus, type ResumeReview } from "../../lib/api";
 import { useScan } from "../../lib/scan-context";
 
 export function Resume() {
@@ -129,6 +129,15 @@ export function Resume() {
       toast.success("Download started");
     } catch {
       toast.error("Download failed");
+    }
+  };
+
+  const handleExportText = async (r: Resume) => {
+    try {
+      await exportResumeText(r.id, r.original_filename || "resume");
+      toast.success("Text export started");
+    } catch {
+      toast.error("Text export failed");
     }
   };
 
@@ -282,6 +291,15 @@ export function Resume() {
                         >
                           <Download className="w-4 h-4 sm:mr-2" />
                           <span className="hidden sm:inline">Download</span>
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 sm:flex-initial"
+                          onClick={() => handleExportText(current)}
+                        >
+                          <FileText className="w-4 h-4 sm:mr-2" />
+                          <span className="hidden sm:inline">Export Text</span>
                         </Button>
                         <Button
                           variant="outline"
@@ -486,6 +504,15 @@ export function Resume() {
                             >
                               <Download className="w-4 h-4 sm:mr-2" />
                               <span className="hidden sm:inline">Download</span>
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex-1 sm:flex-initial"
+                              onClick={() => handleExportText(r)}
+                            >
+                              <FileText className="w-4 h-4 sm:mr-2" />
+                              <span className="hidden sm:inline">Export Text</span>
                             </Button>
                             <Button
                               variant="outline"
