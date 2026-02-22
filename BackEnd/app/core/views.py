@@ -351,6 +351,29 @@ class PasswordResetConfirmView(APIView):
         return Response({"detail": "Password has been reset. You can log in with your new password."})
 
 
+class DebugAvatarView(APIView):
+    """Debug endpoint to diagnose avatar URL issues - ONLY FOR DEBUGGING"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        """Return detailed info about avatar URL generation"""
+        user = User.objects.select_related("profile").get(pk=request.user.pk)
+        
+        return Response({
+            "debug_info": {
+                "request_scheme": request.scheme,
+                "request_host": request.get_host(),
+                "request_method": request.method,
+                "x_forwarded_proto": request.META.get("HTTP_X_FORWARDED_PROTO"),
+                "x_forwarded_host": request.META.get("HTTP_X_FORWARDED_HOST"),
+                "http_host": request.META.get("HTTP_HOST"),
+                "server_name": request.META.get("SERVER_NAME"),
+                "server_port": request.META.get("SERVER_PORT"),
+            },
+            "user": UserSerializer(user, context={"request": request}).data,
+        })
+
+
 class EmailTestView(APIView):
     permission_classes = [IsAuthenticated]
     throttle_classes = [AuthRateThrottle]

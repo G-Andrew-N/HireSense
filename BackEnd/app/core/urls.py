@@ -36,6 +36,7 @@ urlpatterns = [
         name="auth-refresh",
     ),
     path("auth/me/", views.MeView.as_view(), name="auth-me"),
+    path("auth/debug-avatar/", views.DebugAvatarView.as_view(), name="auth-debug-avatar"),  # DEBUG ONLY
     path("auth/password-reset/", views.PasswordResetRequestView.as_view(), name="auth-password-reset"),
     path(
         "auth/password-reset/confirm/",
