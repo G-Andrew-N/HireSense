@@ -59,8 +59,12 @@ class UserSerializer(serializers.ModelSerializer):
         
         # Return proxy URL to avoid CORS issues with Cloudinary
         # Format: /api/auth/avatar/{user_id}/
-        proxy_path = f"/auth/avatar/{obj.id}/"
-        return request.build_absolute_uri(proxy_path)
+        # Build from current request path to preserve /api prefix
+        base_url = request.build_absolute_uri('/').rstrip('/')
+        # Extract the API prefix from the current request path
+        api_prefix = '/api' if '/api/' in request.path else ''
+        proxy_path = f"{api_prefix}/auth/avatar/{obj.id}/"
+        return f"{base_url}{proxy_path}"
 
     def get_email_notifications(self, obj):
         profile = getattr(obj, "profile", None)
