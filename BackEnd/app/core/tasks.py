@@ -27,9 +27,36 @@ def test_celery():
 @shared_task(name="core.tasks.send_password_reset_email", bind=True, max_retries=3)
 def send_password_reset_email(self, email: str, reset_link: str):
     """Send password reset email asynchronously to avoid blocking requests."""
-    resend_api_key = os.getenv("RESEND_API_KEY")
+    brevo_api_key = os.getenv("BREVO_API_KEY")
     
-    # Try Resend first (HTTP API) - works on Render free tier
+    # Try Brevo first (HTTP API) - works on Render free tier, sends to anyone
+    if brevo_api_key:
+        try:
+            import sib_api_v3_sdk
+            
+            configuration = sib_api_v3_sdk.Configuration()
+            configuration.api_key['api-key'] = brevo_api_key
+            
+            api_instance = sib_api_v3_sdk.TransactionalEmailsApi(sib_api_v3_sdk.ApiClient(configuration))
+            
+            send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(
+                to=[{"email": email}],
+                sender={"email": "noreply@hiresense.app", "name": "HireSense"},
+                subject="HireSense: Reset your password",
+                text_content=(
+                    f"Hi,\n\nYou requested a password reset. Open the link below to set a new password:\n\n"
+                    f"{reset_link}\n\nIf you didn't request this, you can ignore this email.\n\n— HireSense"
+                ),
+            )
+            
+            api_instance.send_transac_email(send_smtp_email)
+            logger.info(f"✅ Password reset email sent to {email} via Brevo")
+            return {"status": "success", "email": email, "method": "brevo"}
+        except Exception as exc:
+            logger.error(f"❌ Brevo failed for {email}: {exc}")
+    
+    # Try Resend as fallback
+    resend_api_key = os.getenv("RESEND_API_KEY")
     if resend_api_key:
         try:
             import resend

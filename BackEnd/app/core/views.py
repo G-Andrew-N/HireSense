@@ -227,16 +227,44 @@ class PasswordResetRequestView(APIView):
     @staticmethod
     def _send_password_reset_email(email: str, reset_link: str):
         """Send password reset email with proper error handling."""
-        resend_api_key = os.getenv("RESEND_API_KEY")
+        brevo_api_key = os.getenv("BREVO_API_KEY")
         
-        # Try Resend first (HTTP API) - works on Render free tier
+        # Try Brevo first (HTTP API) - works on Render free tier, sends to anyone
+        if brevo_api_key:
+            try:
+                import sib_api_v3_sdk
+                from sib_api_v3_sdk.rest import ApiException
+                
+                configuration = sib_api_v3_sdk.Configuration()
+                configuration.api_key['api-key'] = brevo_api_key
+                
+                api_instance = sib_api_v3_sdk.TransactionalEmailsApi(sib_api_v3_sdk.ApiClient(configuration))
+                
+                send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(
+                    to=[{"email": email}],
+                    sender={"email": "noreply@hiresense.app", "name": "HireSense"},
+                    subject="HireSense: Reset your password",
+                    text_content=(
+                        f"Hi,\n\nYou requested a password reset. Open the link below to set a new password:\n\n"
+                        f"{reset_link}\n\nIf you didn't request this, you can ignore this email.\n\n— HireSense"
+                    ),
+                )
+                
+                api_instance.send_transac_email(send_smtp_email)
+                logger.info(f"✅ Password reset email sent to {email} via Brevo")
+                return
+            except Exception as e:
+                logger.error(f"❌ Brevo failed for {email}: {e}")
+        
+        # Try Resend as fallback (works but only to verified domain)
+        resend_api_key = os.getenv("RESEND_API_KEY")
         if resend_api_key:
             try:
                 import resend
                 resend.api_key = resend_api_key
                 
                 resend.Emails.send({
-                    "from": "HireSense <onboarding@resend.dev>",  # Resend's test domain
+                    "from": "HireSense <onboarding@resend.dev>",
                     "to": email,
                     "subject": "HireSense: Reset your password",
                     "text": (
