@@ -195,6 +195,7 @@ export function Dashboard() {
 
         {/* Stats Cards - Only show if resumes exist */}
         {!loading && resumes.length > 0 && (
+        <motion.div
           variants={containerVariants}
           initial="hidden"
           animate="visible"
