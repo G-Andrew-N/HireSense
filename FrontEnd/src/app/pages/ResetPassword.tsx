@@ -18,14 +18,28 @@ export function ResetPassword() {
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
 
+  const validatePassword = (value: string) => {
+    return {
+      length: value.length >= 8,
+      uppercase: /[A-Z]/.test(value),
+      lowercase: /[a-z]/.test(value),
+      number: /[0-9]/.test(value),
+      special: /[!@#$%^&*(),.?":{}|<>_\-+=[\]\\/'`~;]/.test(value),
+    };
+  };
+
+  const passwordRequirements = validatePassword(password);
+  const passwordStrength = Object.values(passwordRequirements).filter(Boolean).length;
+  const isPasswordValid = passwordStrength === 5;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (password !== confirm) {
       toast.error("Passwords do not match");
       return;
     }
-    if (password.length < 8) {
-      toast.error("Password must be at least 8 characters");
+    if (!isPasswordValid) {
+      toast.error("Please meet all password requirements");
       return;
     }
     if (!uid || !token) {
