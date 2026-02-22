@@ -135,6 +135,9 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+# Password reset token validity (seconds). Default Django is 3 days; set to 10 minutes.
+PASSWORD_RESET_TIMEOUT = int(os.getenv("PASSWORD_RESET_TIMEOUT", "600"))
+
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
