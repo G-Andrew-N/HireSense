@@ -23,7 +23,7 @@ class UploadFailedError(APIException):
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from django.http import FileResponse
+from django.http import FileResponse, HttpResponseRedirect
 from rest_framework.decorators import action
 from rest_framework.views import APIView
 from rest_framework.mixins import UpdateModelMixin
@@ -795,11 +795,16 @@ class ResumeViewSet(ModelViewSet):
         if not resume.file:
             return Response({"detail": "No file attached."}, status=status.HTTP_404_NOT_FOUND)
         try:
-            # Read file into memory and serve as BytesIO (for seeking support)
+            # Cloudinary storage may not support open() for non-image files.
+            # Redirect to the public URL for download instead of streaming.
+            if getattr(resume.file, "url", None):
+                return HttpResponseRedirect(resume.file.url)
+
+            # Fallback to streaming if URL is missing.
             resume.file.open("rb")
             file_bytes = resume.file.read()
             resume.file.close()
-            
+
             file_obj = BytesIO(file_bytes)
             filename = resume.original_filename or resume.file.name.split("/")[-1]
             response = FileResponse(file_obj, as_attachment=True, filename=filename)
@@ -933,11 +938,45 @@ class ResumeInsightViewSet(UpdateModelMixin, ReadOnlyModelViewSet):
         RESUME_LOG.info("📄 Resume found: id=%s, raw_text_chars=%d, parsed_content_keys=%s", 
                        resume.id, len(resume.raw_text or ""), list((resume.parsed_content or {}).keys()))
         if not resume.raw_text or not resume.raw_text.strip():
-            RESUME_LOG.error("❌ Resume has NO raw_text! id=%s, raw_text=%r", resume.id, resume.raw_text)
-            return Response(
-                {"detail": "Resume has no text. Try re-uploading your resume."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            RESUME_LOG.warning("⚠ Resume has no raw_text, attempting to reprocess from file URL: id=%s", resume.id)
+            try:
+                if resume.file and getattr(resume.file, "url", None):
+                    from urllib.request import urlopen
+                    from .resume_pipeline import process_resume_file_from_bytes
+
+                    with urlopen(resume.file.url, timeout=15) as response:
+                        file_bytes = response.read()
+
+                    if file_bytes:
+                        result = process_resume_file_from_bytes(file_bytes, resume.original_filename or "")
+                        RESUME_LOG.info(
+                            "📊 Reprocess result: success=%s, raw_text=%d chars, error=%s",
+                            result.success,
+                            len(result.raw_text),
+                            result.error,
+                        )
+                        if result.raw_text:
+                            resume.raw_text = result.raw_text
+                            content = dict(result.parsed_content)
+                            if result.structure_hints:
+                                content["structure_hints"] = result.structure_hints
+                            resume.parsed_content = content
+                            resume.save(update_fields=["raw_text", "parsed_content"])
+                        else:
+                            RESUME_LOG.error("❌ Reprocess produced no raw_text: %s", result.error)
+                    else:
+                        RESUME_LOG.error("❌ Downloaded file bytes are empty for resume id=%s", resume.id)
+                else:
+                    RESUME_LOG.error("❌ Resume has no file URL to reprocess: id=%s", resume.id)
+            except Exception as e:
+                RESUME_LOG.exception("Reprocess from file URL failed: %s", e)
+
+            if not resume.raw_text or not resume.raw_text.strip():
+                RESUME_LOG.error("❌ Resume has NO raw_text! id=%s, raw_text=%r", resume.id, resume.raw_text)
+                return Response(
+                    {"detail": "Resume has no text. Try re-uploading your resume."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         RESUME_LOG.info("✅ Resume has text, generating insights...")
         content = dict(resume.parsed_content) if resume.parsed_content else {}
         try:
