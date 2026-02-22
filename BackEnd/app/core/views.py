@@ -640,8 +640,12 @@ class ResumeViewSet(ModelViewSet):
             if file_upload:
                 file_bytes = file_upload.read()
                 file_upload.seek(0)  # Reset for FileField to re-read
+                RESUME_LOG.info("📥 Captured file bytes from request: %d bytes", len(file_bytes))
+            else:
+                RESUME_LOG.warning("⚠ No file_upload in request.FILES")
             
             instance = serializer.save()
+            RESUME_LOG.info("✓ Resume saved: id=%s, file=%s", instance.id, instance.file.name if instance.file else "None")
         except Exception as e:
             RESUME_LOG.exception("Resume save failed: %s", e, exc_info=True)
             raise UploadFailedError from e
@@ -662,23 +666,31 @@ class ResumeViewSet(ModelViewSet):
 
             if file_bytes:
                 # Process using captured file bytes (before upload to Cloudinary)
+                RESUME_LOG.info("🔍 Processing resume from captured file bytes...")
                 result = process_resume_file_from_bytes(file_bytes, instance.original_filename)
-                RESUME_LOG.info("✓ Processed resume from captured file bytes: raw_text=%d chars", len(result.raw_text))
+                RESUME_LOG.info("📊 Result: success=%s, raw_text=%d chars, parsed_keys=%s, error=%s", 
+                               result.success, len(result.raw_text), list(result.parsed_content.keys()), result.error)
             else:
                 # Fallback: process from Cloudinary (may be empty if file not ready)
+                RESUME_LOG.warning("⚠ No file bytes captured, falling back to Cloudinary read")
                 from .resume_pipeline import process_resume_file
                 result = process_resume_file(instance)
-                RESUME_LOG.info("⚠ Processed resume from Cloudinary: raw_text=%d chars", len(result.raw_text))
+                RESUME_LOG.info("📊 Result from file: success=%s, raw_text=%d chars, parsed_keys=%s, error=%s", 
+                               result.success, len(result.raw_text), list(result.parsed_content.keys()), result.error)
             
-            instance.raw_text = result.raw_text
-            content = dict(result.parsed_content)
-            if result.structure_hints:
-                content["structure_hints"] = result.structure_hints
-            instance.parsed_content = content
-            instance.save(update_fields=["raw_text", "parsed_content"])
-            RESUME_LOG.info("✓ Saved resume with raw_text: %d chars, parsed_content: %s", len(result.raw_text), list(content.keys()))
+            if result.raw_text:
+                instance.raw_text = result.raw_text
+                content = dict(result.parsed_content)
+                if result.structure_hints:
+                    content["structure_hints"] = result.structure_hints
+                instance.parsed_content = content
+                instance.save(update_fields=["raw_text", "parsed_content"])
+                RESUME_LOG.info("✅ Successfully saved resume with raw_text: %d chars, parsed_keys: %s", 
+                               len(result.raw_text), list(content.keys()))
+            else:
+                RESUME_LOG.error("❌ Result has no raw_text! Error: %s", result.error)
         except Exception as e:
-            RESUME_LOG.warning("Resume parsing failed during upload: %s", e)
+            RESUME_LOG.exception("Resume parsing failed during upload: %s", e)
 
     def perform_destroy(self, instance):
         if instance.file:
@@ -906,16 +918,22 @@ class ResumeInsightViewSet(UpdateModelMixin, ReadOnlyModelViewSet):
         from .tasks import _get_current_resume
 
         resume = _get_current_resume(request.user)
+        RESUME_LOG.info("🔎 Checking resume for insights generation: resume=%s", resume)
         if not resume:
+            RESUME_LOG.warning("⚠ No resume found for user %s", request.user.id)
             return Response(
                 {"detail": "Upload a resume first to generate insights."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        RESUME_LOG.info("📄 Resume found: id=%s, raw_text_chars=%d, parsed_content_keys=%s", 
+                       resume.id, len(resume.raw_text or ""), list((resume.parsed_content or {}).keys()))
         if not resume.raw_text or not resume.raw_text.strip():
+            RESUME_LOG.error("❌ Resume has NO raw_text! id=%s, raw_text=%r", resume.id, resume.raw_text)
             return Response(
                 {"detail": "Resume has no text. Try re-uploading your resume."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        RESUME_LOG.info("✅ Resume has text, generating insights...")
         content = dict(resume.parsed_content) if resume.parsed_content else {}
         try:
             insights = generate_insights(resume.raw_text, content)
