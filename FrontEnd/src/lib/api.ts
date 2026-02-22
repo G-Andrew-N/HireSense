@@ -385,11 +385,15 @@ export async function downloadResume(id: number, filename: string): Promise<void
   });
   if (!res.ok) throw new Error('Download failed');
   const blob = await res.blob();
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = filename || 'resume.pdf';
-  a.click();
-  URL.revokeObjectURL(a.href);
+  const objectUrl = URL.createObjectURL(blob);
+  const newTab = window.open(objectUrl, '_blank', 'noopener');
+  if (!newTab) {
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = filename || 'resume.pdf';
+    a.click();
+  }
+  URL.revokeObjectURL(objectUrl);
 }
 
 export async function deleteResume(id: number): Promise<void> {
