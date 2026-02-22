@@ -288,6 +288,26 @@ export interface Resume {
   is_primary?: boolean;
 }
 
+export interface ResumeReviewSummary {
+  word_count: number;
+  has_email: boolean;
+  has_phone: boolean;
+  has_summary: boolean;
+  skills_count: number;
+  experience_count: number;
+  education_count: number;
+  parsing_in_progress: boolean;
+}
+
+export interface ResumeReview {
+  status: string;
+  resume_id: number;
+  summary: ResumeReviewSummary;
+  strengths: string[];
+  gaps: string[];
+  suggestions: string[];
+}
+
 export interface MatchAnalysisStatus {
   started: boolean;
   async?: boolean;
@@ -350,6 +370,10 @@ export async function uploadResume(file: File, onProgress?: (p: number) => void)
     xhr.onerror = () => reject(new Error('Network error'));
     xhr.send(form);
   });
+}
+
+export async function getResumeReview(id: number): Promise<ResumeReview> {
+  return apiRequest<ResumeReview>(`/resumes/${id}/review/`);
 }
 
 /** Download resume file (auth required). Triggers browser download. */

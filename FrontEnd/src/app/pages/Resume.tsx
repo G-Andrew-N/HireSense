@@ -9,13 +9,12 @@ import {
   FileText,
   CheckCircle2,
   AlertCircle,
-  Download,
+  Sparkles,
   Loader2,
   Trash2,
 } from "lucide-react";
-import { getResumes, uploadResume, downloadResume, deleteResume, setResumePrimary, type Resume, type MatchAnalysisStatus } from "../../lib/api";
+import { getResumes, uploadResume, getResumeReview, deleteResume, setResumePrimary, type Resume, type MatchAnalysisStatus, type ResumeReview } from "../../lib/api";
 import { useScan } from "../../lib/scan-context";
-import { useBanner } from "../../lib/banner-context";
 
 export function Resume() {
   const [resumes, setResumes] = useState<Resume[]>([]);
@@ -24,6 +23,9 @@ export function Resume() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [settingPrimaryId, setSettingPrimaryId] = useState<number | null>(null);
+  const [review, setReview] = useState<ResumeReview | null>(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = () => {
@@ -45,7 +47,30 @@ export function Resume() {
     r.original_filename || r.file?.split("/").pop() || "Resume";
 
   const { setScanning } = useScan();
-  const { show: showBanner } = useBanner();
+
+  const loadReview = async (resumeId: number) => {
+    setReviewLoading(true);
+    setReviewError(null);
+    try {
+      const data = await getResumeReview(resumeId);
+      setReview(data);
+      return true;
+    } catch {
+      setReviewError("Failed to load resume review");
+      setReview(null);
+      return false;
+    } finally {
+      setReviewLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (current?.id) {
+      loadReview(current.id);
+    } else {
+      setReview(null);
+    }
+  }, [current?.id]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -88,12 +113,12 @@ export function Resume() {
     }
   };
 
-  const handleDownload = async (r: Resume) => {
-    try {
-      await downloadResume(r.id, r.original_filename || "resume.pdf");
-      toast.success("Download started");
-    } catch {
-      toast.error("Download failed");
+  const handleReviewRefresh = async (r: Resume) => {
+    const ok = await loadReview(r.id);
+    if (ok) {
+      toast.success("Resume review updated");
+    } else {
+      toast.error("Failed to load resume review");
     }
   };
 
@@ -234,10 +259,10 @@ export function Resume() {
                           variant="outline"
                           size="sm"
                           className="flex-1 sm:flex-initial"
-                          onClick={() => handleDownload(current)}
+                          onClick={() => handleReviewRefresh(current)}
                         >
-                          <Download className="w-4 h-4 sm:mr-2" />
-                          <span className="hidden sm:inline">Download</span>
+                          <Sparkles className="w-4 h-4 sm:mr-2" />
+                          <span className="hidden sm:inline">Review</span>
                         </Button>
                         <Button
                           variant="outline"
@@ -307,6 +332,81 @@ export function Resume() {
                     ))}
                   </div>
                   <div className="space-y-4 pt-4 border-t">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="font-semibold text-gray-900 dark:text-gray-100">Resume Review</h3>
+                      {current && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleReviewRefresh(current)}
+                          disabled={reviewLoading}
+                        >
+                          {reviewLoading ? <Loader2 className="w-4 h-4 sm:mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 sm:mr-2" />}
+                          <span className="hidden sm:inline">Refresh</span>
+                        </Button>
+                      )}
+                    </div>
+                    {reviewLoading ? (
+                      <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Loading review...
+                      </div>
+                    ) : reviewError ? (
+                      <p className="text-sm text-red-600 dark:text-red-400">{reviewError}</p>
+                    ) : review ? (
+                      <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                          <div className="rounded border border-gray-200 dark:border-gray-700 px-2 py-1">
+                            <span className="text-gray-500">Words</span> · {review.summary.word_count}
+                          </div>
+                          <div className="rounded border border-gray-200 dark:border-gray-700 px-2 py-1">
+                            <span className="text-gray-500">Skills</span> · {review.summary.skills_count}
+                          </div>
+                          <div className="rounded border border-gray-200 dark:border-gray-700 px-2 py-1">
+                            <span className="text-gray-500">Experience</span> · {review.summary.experience_count}
+                          </div>
+                          <div className="rounded border border-gray-200 dark:border-gray-700 px-2 py-1">
+                            <span className="text-gray-500">Education</span> · {review.summary.education_count}
+                          </div>
+                        </div>
+                        {review.strengths.length > 0 && (
+                          <div>
+                            <p className="text-xs font-semibold uppercase text-emerald-700 dark:text-emerald-400">Strengths</p>
+                            <ul className="mt-1 space-y-1">
+                              {review.strengths.map((item) => (
+                                <li key={item}>• {item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {review.gaps.length > 0 && (
+                          <div>
+                            <p className="text-xs font-semibold uppercase text-amber-700 dark:text-amber-400">Gaps</p>
+                            <ul className="mt-1 space-y-1">
+                              {review.gaps.map((item) => (
+                                <li key={item}>• {item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {review.suggestions.length > 0 && (
+                          <div>
+                            <p className="text-xs font-semibold uppercase text-blue-700 dark:text-blue-400">Suggestions</p>
+                            <ul className="mt-1 space-y-1">
+                              {review.suggestions.map((item) => (
+                                <li key={item}>• {item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        Upload a resume to receive an instant review.
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-4 pt-4 border-t">
                     <h3 className="font-semibold text-gray-900 dark:text-gray-100">
                       Your resumes ({resumes.length})
                     </h3>
@@ -354,10 +454,10 @@ export function Resume() {
                               variant="outline"
                               size="sm"
                               className="flex-1 sm:flex-initial"
-                              onClick={() => handleDownload(r)}
+                              onClick={() => handleReviewRefresh(r)}
                             >
-                              <Download className="w-4 h-4 sm:mr-2" />
-                              <span className="hidden sm:inline">Download</span>
+                              <Sparkles className="w-4 h-4 sm:mr-2" />
+                              <span className="hidden sm:inline">Review</span>
                             </Button>
                             <Button
                               variant="outline"

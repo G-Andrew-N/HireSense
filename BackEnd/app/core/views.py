@@ -896,6 +896,105 @@ class ResumeViewSet(ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+    @action(detail=True, methods=["get"])
+    def review(self, request, pk=None):
+        """Rule-based resume review using stored raw_text and parsed_content."""
+        import re
+
+        resume = self.get_object()
+        parsed = resume.parsed_content if isinstance(resume.parsed_content, dict) else {}
+        raw_text = resume.raw_text or ""
+
+        def count_entries(value):
+            if isinstance(value, list):
+                return len(value)
+            if isinstance(value, dict):
+                return len(value)
+            if isinstance(value, str):
+                return 1 if value.strip() else 0
+            return 0
+
+        word_count = len(re.findall(r"\b\w+\b", raw_text))
+        has_email = bool(re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", raw_text))
+        has_phone = bool(re.search(r"\+?\d[\d\s().-]{7,}\d", raw_text))
+
+        summary_present = bool(parsed.get("summary")) or "summary" in raw_text.lower()
+        skills_count = count_entries(parsed.get("skills"))
+        experience_count = count_entries(parsed.get("experience"))
+        education_count = count_entries(parsed.get("education"))
+        parsing_in_progress = bool(parsed.get("_parsing"))
+
+        strengths = []
+        gaps = []
+        suggestions = []
+
+        if word_count >= 300:
+            strengths.append("Good length: enough detail to show impact.")
+        else:
+            gaps.append("Resume is short on detail.")
+            suggestions.append("Add more quantified impact and project details.")
+
+        if summary_present:
+            strengths.append("Summary section detected.")
+        else:
+            gaps.append("Summary section missing.")
+            suggestions.append("Add a 2-3 line summary tailored to your target role.")
+
+        if skills_count >= 6:
+            strengths.append("Skills section looks well populated.")
+        else:
+            gaps.append("Skills list looks thin.")
+            suggestions.append("Add a focused skills section with 6-12 relevant skills.")
+
+        if experience_count >= 2:
+            strengths.append("Multiple experience entries detected.")
+        else:
+            gaps.append("Limited experience entries detected.")
+            suggestions.append("Add more experience entries with bullet points and outcomes.")
+
+        if education_count >= 1:
+            strengths.append("Education section detected.")
+        else:
+            gaps.append("Education section missing.")
+            suggestions.append("Add education credentials, even if brief.")
+
+        if has_email:
+            strengths.append("Email contact detected.")
+        else:
+            gaps.append("Email contact not detected.")
+            suggestions.append("Add an email address in the header.")
+
+        if has_phone:
+            strengths.append("Phone contact detected.")
+        else:
+            gaps.append("Phone contact not detected.")
+            suggestions.append("Add a phone number in the header.")
+
+        if not raw_text and not parsed:
+            gaps.append("Resume text not available yet.")
+            suggestions.append("Re-upload the resume or wait for parsing to finish.")
+
+        return Response(
+            {
+                "status": "success",
+                "resume_id": resume.id,
+                "summary": {
+                    "word_count": word_count,
+                    "has_email": has_email,
+                    "has_phone": has_phone,
+                    "has_summary": summary_present,
+                    "skills_count": skills_count,
+                    "experience_count": experience_count,
+                    "education_count": education_count,
+                    "parsing_in_progress": parsing_in_progress,
+                },
+                "strengths": strengths,
+                "gaps": gaps,
+                "suggestions": suggestions,
+            },
+            status=status.HTTP_200_OK,
+        )
+
 
 def _parse_and_save_resume(resume: Resume) -> None:
     """Run resume processing pipeline and save to instance."""
