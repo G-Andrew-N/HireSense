@@ -21,7 +21,9 @@ HireSense is a full-stack web application designed to revolutionize the job sear
 ### Backend (Django + Celery)
 - **Framework**: Django REST Framework for API endpoints
 - **Job Aggregation**: Multiple fetchers (RSS, generic web scraper, specialized API integrations)
-- **File Processing**: Resume parsing from PDF and DOCX formats
+- **File Processing**: Resume parsing from PDF and DOCX formats; avatar storage on local filesystem
+- **Media Serving**: Dedicated CORS-enabled views for serving avatars at `/api/media/avatars/`
+- **Default Avatars**: Built-in humanoid SVG avatar for users without custom profile pictures
 - **Task Queue**: Celery with Redis for async job fetching and AI processing
 - **AI Integration**: Support for multiple LLM providers (OpenAI, Google Generative AI, Groq)
 - **Database**: PostgreSQL (production) / SQLite (development)
@@ -38,6 +40,13 @@ HireSense is a full-stack web application designed to revolutionize the job sear
 - Compare resume against job postings with percentage match score
 - Identify matching and missing skills
 - Filter and sort matches by score, date, or company
+- Optimized job search with 10-15 second timeout for responsive user experience
+
+### Dashboard
+- Real-time job match metrics and statistics
+- Empty state guidance when users haven't uploaded resumes yet
+- Activity charts and top matches visualization
+- Quick access to resume management and job scanning
 
 ### Resume Intelligence
 - AI generates actionable improvement suggestions
@@ -57,7 +66,8 @@ HireSense is a full-stack web application designed to revolutionize the job sear
 - Filter by status (matched, applied, etc.)
 
 ### User Profiles
-- Profile avatars
+- Profile avatars with default humanoid SVG for new users
+- Local filesystem avatar storage with CORS-enabled media serving
 - Email notification preferences
 - Multiple resume management with primary resume selection
 - Settings and preferences management
@@ -72,6 +82,8 @@ HireSense/
 │       ├── core/               # Main app models, views, serializers
 │       │   ├── models.py       # UserProfile, JobPosting, JobMatch, Resume, etc.
 │       │   ├── views.py        # API endpoints
+│       │   ├── media_views.py  # Avatar and media file serving
+│       │   ├── storage.py      # Local avatar storage backend
 │       │   ├── job_sources/    # Job fetching implementations
 │       │   └── tasks.py        # Celery async tasks
 │       └── app/                # Django config (settings, urls, celery)
@@ -84,8 +96,23 @@ HireSense/
 │       └── styles/            # Global styles, Tailwind config
 ```
 
-## Core Models
+## Core Systems
 
+### Media Serving
+- **Avatar Storage**: Local filesystem (`media/avatars/{year}/{month}/filename.jpg`)
+- **Default Avatar**: SVG-based humanoid avatar served at `/api/media/avatars/default`
+- **Custom Avatars**: Individual avatars served at `/api/media/avatars/{year}/{month}/{filename}`
+- **CORS Support**: All media endpoints include proper CORS headers for cross-origin requests
+- **Caching**: Media files cached for 1 hour to reduce server load
+
+### Job Search Optimization
+- **Chunk-based Processing**: Jobs processed in 2-job chunks to prevent worker timeouts
+- **Timeout Handling**: Maximum 10-15 second job search to maintain responsive UI
+- **Source Reliability**: Uses stable job sources (Indeed, LinkedIn, ZipRecruiter, Remotive API, We Work Remotely RSS)
+- **Graceful Degradation**: Returns partial results if search times out
+- **Rate Limiting**: Respects job board limits and implements backoff strategies
+
+### Core Models
 - **UserProfile**: Extended user information with avatar and primary resume selection
 - **JobPosting**: Raw job listings from various sources
 - **JobSite**: Configured job sources (built-in or user-added)
