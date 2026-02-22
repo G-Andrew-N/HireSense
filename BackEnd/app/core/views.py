@@ -234,6 +234,50 @@ class MeView(APIView):
         return Response(UserSerializer(user, context={"request": request}).data)
 
 
+class AvatarProxyView(APIView):
+    """
+    Proxy avatar images from Cloudinary to avoid CORS issues.
+    Returns the avatar image for a given user.
+    """
+    permission_classes = [AllowAny]  # Public access to view avatars
+    
+    def get(self, request, user_id):
+        import requests
+        from django.http import HttpResponse
+        
+        try:
+            user = User.objects.select_related("profile").get(pk=user_id)
+            profile = user.profile
+            
+            if not profile or not profile.avatar:
+                return HttpResponse(status=404)
+            
+            # Get the Cloudinary URL
+            avatar_url = profile.avatar.url
+            if not avatar_url or not avatar_url.startswith(("http://", "https://")):
+                return HttpResponse(status=404)
+            
+            # Fetch the image from Cloudinary
+            response = requests.get(avatar_url, timeout=10)
+            if response.status_code != 200:
+                return HttpResponse(status=404)
+            
+            # Return the image with proper content type
+            content_type = response.headers.get("Content-Type", "image/jpeg")
+            http_response = HttpResponse(response.content, content_type=content_type)
+            
+            # Add caching headers (1 hour)
+            http_response["Cache-Control"] = "public, max-age=3600"
+            
+            return http_response
+            
+        except User.DoesNotExist:
+            return HttpResponse(status=404)
+        except Exception as e:
+            logger.error(f"Avatar proxy error for user {user_id}: {e}")
+            return HttpResponse(status=500)
+
+
 class PasswordResetRequestView(APIView):
     permission_classes = [AllowAny]
     throttle_classes = [AuthRateThrottle]
