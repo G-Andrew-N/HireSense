@@ -84,7 +84,7 @@ const adminNotificationTypeLabels: Record<string, string> = {
 };
 
 export function Notifications() {
-  const { notifications, markAsRead, markAllAsRead, clearReadNotifications } = useNotification();
+  const { notifications, markAsRead, markAllAsRead, clearReadNotifications, clearNonSystemNotifications } = useNotification();
   const [adminNotifications, setAdminNotifications] = useState<AdminNotification[]>([]);
   const [loadingAdmin, setLoadingAdmin] = useState(true);
   const [filter, setFilter] = useState<"all" | "unread" | "system">("all");
@@ -117,13 +117,14 @@ export function Notifications() {
   // Listen for resume deletion event and refresh admin notifications
   useEffect(() => {
     const handleResumeCleared = () => {
-      console.log("📢 Notifications page received hiresense:resumes-cleared - refreshing data");
+      console.log("📢 Notifications page received hiresense:resumes-cleared - clearing non-system notifications");
+      clearNonSystemNotifications();
       fetchAdminNotifications();
     };
 
     window.addEventListener("hiresense:resumes-cleared", handleResumeCleared);
     return () => window.removeEventListener("hiresense:resumes-cleared", handleResumeCleared);
-  }, []);
+  }, [clearNonSystemNotifications]);
 
 
 

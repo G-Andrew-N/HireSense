@@ -25,6 +25,7 @@ interface NotificationContextValue {
   markAsRead: (id: string) => void;
   markAllAsRead: () => void;
   clearReadNotifications: () => void;
+  clearNonSystemNotifications: () => void;
   resetNotifications: (notifications: Notification[]) => void;
 }
 
@@ -78,6 +79,10 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     setNotifications(prev => prev.filter(n => !n.read));
   }, []);
 
+  const clearNonSystemNotifications = useCallback(() => {
+    setNotifications(prev => prev.filter(n => n.type === "system"));
+  }, []);
+
   const resetNotifications = useCallback((newNotifications: Notification[]) => {
     setNotifications(newNotifications);
   }, []);
@@ -89,6 +94,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         markAsRead,
         markAllAsRead,
         clearReadNotifications,
+        clearNonSystemNotifications,
         resetNotifications,
       }}
     >
