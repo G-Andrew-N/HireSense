@@ -121,12 +121,15 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 
 class ResumeSerializer(serializers.ModelSerializer):
     is_primary = serializers.SerializerMethodField(read_only=True)
+    file = serializers.SerializerMethodField(read_only=True)  # Download URL, not raw binary
+    file_upload = serializers.FileField(write_only=True, required=False)  # For uploads only
 
     class Meta:
         model = Resume
         fields = (
             "id",
             "file",
+            "file_upload",
             "original_filename",
             "uploaded_at",
             "version",
@@ -134,7 +137,14 @@ class ResumeSerializer(serializers.ModelSerializer):
             "raw_text",
             "is_primary",
         )
-        read_only_fields = ("uploaded_at", "version", "parsed_content", "raw_text", "is_primary")
+        read_only_fields = ("uploaded_at", "version", "parsed_content", "raw_text", "is_primary", "file")
+
+    def get_file(self, obj):
+        """Return download URL for the resume file."""
+        request = self.context.get("request")
+        if not request:
+            return None
+        return request.build_absolute_uri(f"/api/resumes/{obj.id}/download/")
 
     def get_is_primary(self, obj):
         request = self.context.get("request")
@@ -145,20 +155,25 @@ class ResumeSerializer(serializers.ModelSerializer):
             return False
         return getattr(profile, "primary_resume_id", None) == obj.id
 
-    def validate_file(self, value):
+    def validate_file_upload(self, value):
         from core.resume_utils import validate_resume_file
 
         is_valid, err = validate_resume_file(value)
         if not is_valid:
-            raise serializers.ValidationError({"file": [err]})
+            raise serializers.ValidationError(err)
         return value
 
     def create(self, validated_data):
         user = self.context["request"].user
         last = Resume.objects.filter(user=user).order_by("-version").first()
         version = (last.version + 1) if last else 1
-        if validated_data.get("file"):
-            validated_data["original_filename"] = validated_data["file"].name
+        
+        file_upload = validated_data.pop("file_upload", None)
+        if file_upload:
+            # Store original filename and read file content into memory
+            validated_data["original_filename"] = file_upload.name
+            validated_data["file_data"] = file_upload.read()
+        
         validated_data["user"] = user
         validated_data["version"] = version
         return super().create(validated_data)

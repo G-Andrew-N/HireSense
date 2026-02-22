@@ -267,7 +267,7 @@ def parse_resume_async(self, resume_id: int) -> dict:
     
     try:
         resume = Resume.objects.get(pk=resume_id)
-        logger.info("✓ Resume found: id=%s, user=%s, filename=%s", resume_id, resume.user_id, resume.file.name if resume.file else "None")
+        logger.info("✓ Resume found: id=%s, user=%s, filename=%s", resume_id, resume.user_id, resume.original_filename or "unnamed")
         
         from .resume_pipeline import process_resume_file
         

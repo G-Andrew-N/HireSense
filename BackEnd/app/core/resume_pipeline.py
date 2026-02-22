@@ -29,41 +29,25 @@ class PipelineResult(NamedTuple):
 
 def process_resume_file(resume: Resume) -> PipelineResult:
     """
-    Full pipeline: extract text -> AI parse -> return result.
+    Full pipeline: extract text from binary file data -> AI parse -> return result.
 
     Does NOT save to the Resume instance; caller should update and save.
     """
-    # Stage 1: Extract text from file
-    if not resume.file:
+    # Stage 1: Extract text from binary file data
+    if not resume.file_data:
         return PipelineResult(
             raw_text="",
             parsed_content={},
             structure_hints={},
             success=False,
-            error="No file attached",
-        )
-
-    is_valid, err = validate_resume_file(resume.file)
-    if not is_valid:
-        return PipelineResult(
-            raw_text="",
-            parsed_content={},
-            structure_hints={},
-            success=False,
-            error=err,
+            error="No file data attached",
         )
 
     try:
         from io import BytesIO
         
-        # Read file bytes into memory to ensure seekability
-        # (Cloudinary files may not be natively seekable)
-        resume.file.open("rb")
-        file_bytes = resume.file.read()
-        resume.file.close()
-        
-        # Create a seekable BytesIO object for extraction libraries
-        file_obj = BytesIO(file_bytes)
+        # Create a seekable BytesIO object from binary data for extraction libraries
+        file_obj = BytesIO(resume.file_data)
         extraction = extract_with_structure(file_obj)
     except Exception as e:
         logger.exception("Resume file read failed: %s", e)

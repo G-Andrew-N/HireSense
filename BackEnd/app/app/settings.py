@@ -157,7 +157,7 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 
 # Media files (user uploads, e.g. resumes)
-# Use Cloudinary for production (set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET)
+# Resumes stored as binary in database; avatars use Cloudinary if configured
 USE_CLOUDINARY = os.getenv("CLOUDINARY_CLOUD_NAME", "").strip()
 
 if USE_CLOUDINARY:
@@ -166,16 +166,21 @@ if USE_CLOUDINARY:
         "API_KEY": os.getenv("CLOUDINARY_API_KEY"),
         "API_SECRET": os.getenv("CLOUDINARY_API_SECRET"),
     }
-    DEFAULT_FILE_STORAGE = "cloudinary_storage.storage.MediaCloudinaryStorage"
+    # Use default Django storage for resumes (they're in database)
+    # Cloudinary available only for avatar field override
     STORAGES = {
         "default": {
-            "BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage",
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+        },
+        "cloudinary": {
+            "BACKEND": "cloudinary_storage.storage.CloudinaryStorage",
         },
         "staticfiles": {
             "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
         },
     }
-    MEDIA_URL = "https://res.cloudinary.com/{}/image/upload/".format(os.getenv("CLOUDINARY_CLOUD_NAME"))
+    MEDIA_URL = os.getenv("MEDIA_URL", "media/")
+    MEDIA_ROOT = BASE_DIR / "media"
 else:
     # Fallback to local storage for development
     MEDIA_URL = os.getenv("MEDIA_URL", "media/")

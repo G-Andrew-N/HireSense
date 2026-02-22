@@ -664,8 +664,7 @@ class ResumeViewSet(ModelViewSet):
             RESUME_LOG.warning("Resume parsing failed during upload: %s", e)
 
     def perform_destroy(self, instance):
-        if instance.file:
-            instance.file.delete(save=False)
+        # File data is stored in database, no need to delete from storage
         instance.delete()
 
     @action(detail=True, methods=["post"])
@@ -755,14 +754,19 @@ class ResumeViewSet(ModelViewSet):
     @action(detail=True, methods=["get"])
     def download(self, request, pk=None):
         """Secure download: only the owning user can download."""
+        from io import BytesIO
+        
         resume = self.get_object()
-        if not resume.file:
+        if not resume.file_data:
             return Response({"detail": "No file attached."}, status=status.HTTP_404_NOT_FOUND)
         try:
-            file_handle = resume.file.open("rb")
-            response = FileResponse(file_handle, as_attachment=True, filename=resume.original_filename or resume.file.name.split("/")[-1])
+            # Create a file-like object from binary data
+            file_obj = BytesIO(resume.file_data)
+            filename = resume.original_filename or f"resume_{resume.id}.bin"
+            response = FileResponse(file_obj, as_attachment=True, filename=filename)
             return response
-        except FileNotFoundError:
+        except Exception as e:
+            RESUME_LOG.exception("Resume download failed: %s", e)
             return Response({"detail": "File not found."}, status=status.HTTP_404_NOT_FOUND)
 
 
