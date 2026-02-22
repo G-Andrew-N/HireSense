@@ -18,9 +18,15 @@ export function Login() {
   const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) return;
+    if (!isValidEmail(email)) {
+      toast.error("Please enter a valid email address");
+      return;
+    }
     setLoading(true);
     try {
       const res = await login(email, password, rememberMe);

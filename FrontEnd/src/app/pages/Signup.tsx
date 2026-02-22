@@ -26,6 +26,8 @@ export function Signup() {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [termsAccepted, setTermsAccepted] = useState(false);
 
+  const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+
   // Comprehensive password validation
   const validatePassword = (password: string) => {
     return {
@@ -47,6 +49,11 @@ export function Signup() {
     // Validate terms acceptance
     if (!termsAccepted) {
       toast.error("Please agree to our Terms of Service and Privacy Policy to continue");
+      return;
+    }
+
+    if (!isValidEmail(formData.email)) {
+      toast.error("Please enter a valid email address");
       return;
     }
 

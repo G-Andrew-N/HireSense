@@ -13,8 +13,14 @@ export function ForgotPassword() {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isValidEmail(email)) {
+      toast.error("Please enter a valid email address");
+      return;
+    }
     setLoading(true);
     try {
       await requestPasswordReset(email);
