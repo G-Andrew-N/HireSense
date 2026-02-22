@@ -396,26 +396,6 @@ export async function downloadResume(id: number, filename: string): Promise<void
   URL.revokeObjectURL(objectUrl);
 }
 
-export async function exportResumeText(id: number, filename?: string): Promise<void> {
-  const token = await getToken();
-  const url = `${API_BASE}/resumes/${id}/export-text/`;
-  const res = await fetch(url, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!res.ok) throw new Error('Export failed');
-  const blob = await res.blob();
-  const baseName = (filename || 'resume').replace(/\.[^/.]+$/, '') || 'resume';
-  const objectUrl = URL.createObjectURL(blob);
-  const newTab = window.open(objectUrl, '_blank', 'noopener');
-  if (!newTab) {
-    const a = document.createElement('a');
-    a.href = objectUrl;
-    a.download = `${baseName}.txt`;
-    a.click();
-  }
-  URL.revokeObjectURL(objectUrl);
-}
-
 export async function deleteResume(id: number): Promise<void> {
   await apiRequest(`/resumes/${id}/`, { method: 'DELETE' });
 }

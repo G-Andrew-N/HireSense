@@ -14,7 +14,7 @@ import {
   Loader2,
   Trash2,
 } from "lucide-react";
-import { getResumes, uploadResume, downloadResume, exportResumeText, getResumeReview, deleteResume, setResumePrimary, type Resume, type MatchAnalysisStatus, type ResumeReview } from "../../lib/api";
+import { getResumes, uploadResume, getResumeReview, deleteResume, setResumePrimary, type Resume, type MatchAnalysisStatus, type ResumeReview } from "../../lib/api";
 import { useScan } from "../../lib/scan-context";
 
 export function Resume() {
@@ -123,23 +123,7 @@ export function Resume() {
     }
   };
 
-  const handleDownload = async (r: Resume) => {
-    try {
-      await downloadResume(r.id, r.original_filename || "resume.pdf");
-      toast.success("Download started");
-    } catch {
-      toast.error("Download failed");
-    }
-  };
 
-  const handleExportText = async (r: Resume) => {
-    try {
-      await exportResumeText(r.id, r.original_filename || "resume");
-      toast.success("Text export started");
-    } catch {
-      toast.error("Text export failed");
-    }
-  };
 
   const handleRemove = async (r: Resume, label: string) => {
     if (!window.confirm(`Remove ${label}? You can upload a new file anytime.`)) return;
@@ -287,19 +271,11 @@ export function Resume() {
                           variant="outline"
                           size="sm"
                           className="flex-1 sm:flex-initial"
-                          onClick={() => handleDownload(current)}
+                          disabled
+                          title="Download feature coming soon"
                         >
                           <Download className="w-4 h-4 sm:mr-2" />
                           <span className="hidden sm:inline">Download</span>
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="flex-1 sm:flex-initial"
-                          onClick={() => handleExportText(current)}
-                        >
-                          <FileText className="w-4 h-4 sm:mr-2" />
-                          <span className="hidden sm:inline">Export Text</span>
                         </Button>
                         <Button
                           variant="outline"
@@ -495,24 +471,6 @@ export function Resume() {
                             >
                               <Sparkles className="w-4 h-4 sm:mr-2" />
                               <span className="hidden sm:inline">Review</span>
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="flex-1 sm:flex-initial"
-                              onClick={() => handleDownload(r)}
-                            >
-                              <Download className="w-4 h-4 sm:mr-2" />
-                              <span className="hidden sm:inline">Download</span>
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="flex-1 sm:flex-initial"
-                              onClick={() => handleExportText(r)}
-                            >
-                              <FileText className="w-4 h-4 sm:mr-2" />
-                              <span className="hidden sm:inline">Export Text</span>
                             </Button>
                             <Button
                               variant="outline"

@@ -915,28 +915,6 @@ class ResumeViewSet(ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-    @action(detail=True, methods=["get"], url_path="export-text")
-    def export_text(self, request, pk=None):
-        """Export parsed resume text as a plain text file."""
-        resume = self.get_object()
-        text = resume.raw_text or ""
-        if not text.strip():
-            return Response(
-                {"detail": "Resume text not available yet."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        base_name = resume.original_filename or "resume"
-        base_name = os.path.splitext(base_name)[0] or "resume"
-        filename = f"{base_name}.txt"
-
-        response = HttpResponse(text, content_type="text/plain; charset=utf-8")
-        response["Content-Disposition"] = f'attachment; filename="{filename}"'
-        return response
-
-    @action(detail=True, methods=["get"])
-    def review(self, request, pk=None):
-        """Rule-based resume review using stored raw_text and parsed_content."""
         import re
 
         resume = self.get_object()
