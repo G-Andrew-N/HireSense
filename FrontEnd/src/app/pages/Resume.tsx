@@ -200,8 +200,8 @@ export function Resume() {
       />
 
       <div className="flex-1 p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 pb-20 lg:pb-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-          <Card className="lg:col-span-2">
+        <div className="grid grid-cols-1 gap-4 sm:gap-6">
+          <Card>
             <CardHeader>
               <CardTitle>Resume Upload</CardTitle>
             </CardHeader>
