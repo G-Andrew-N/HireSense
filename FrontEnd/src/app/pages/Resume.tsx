@@ -501,12 +501,15 @@ export function Resume() {
               <CardTitle className="flex items-center gap-2">AI Analysis</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {current?.parsed_content?.skills?.length ? (
+              {current?.parsed_content && typeof current.parsed_content === 'object' && 
+               'skills' in current.parsed_content && 
+               Array.isArray(current.parsed_content.skills) && 
+               current.parsed_content.skills.length > 0 ? (
                 <div className="space-y-2">
                   <p className="text-sm font-medium">Extracted Skills</p>
                   <div className="flex flex-wrap gap-2">
-                    {(current.parsed_content.skills as string[]).slice(0, 10).map((s) => (
-                      <span key={s} className="px-2 py-0.5 bg-white dark:bg-gray-800 rounded text-xs">
+                    {(current.parsed_content.skills as string[]).slice(0, 10).map((s, idx) => (
+                      <span key={`${s}-${idx}`} className="px-2 py-0.5 bg-white dark:bg-gray-800 rounded text-xs">
                         {s}
                       </span>
                     ))}
