@@ -811,23 +811,56 @@ class ResumeViewSet(ModelViewSet):
         resume = self.get_object()
         if not resume.file:
             return Response({"detail": "No file attached."}, status=status.HTTP_404_NOT_FOUND)
+        
         try:
-            # Cloudinary storage may not support open() for non-image files.
-            # Redirect to the public URL for download instead of streaming.
-            if getattr(resume.file, "url", None):
-                return HttpResponseRedirect(resume.file.url)
-
-            # Fallback to streaming if URL is missing.
-            resume.file.open("rb")
-            file_bytes = resume.file.read()
-            resume.file.close()
-
+            # Try to get Cloudinary URL
+            file_url = getattr(resume.file, "url", None)
+            
+            # Check if URL exists and looks valid (not empty, starts with http, is a Cloudinary URL)
+            if file_url and isinstance(file_url, str) and file_url.strip() and file_url.startswith("http"):
+                logger.info(f"📎 Redirecting to Cloudinary URL: {file_url[:80]}...")
+                return HttpResponseRedirect(file_url)
+            
+            # Fallback: URL is missing or invalid, try to stream the file directly
+            logger.info(f"⚠️  Cloudinary URL not available (url={repr(file_url)}), streaming file directly")
+            
+            # Try to open and read the file from storage
+            try:
+                resume.file.open("rb")
+                file_bytes = resume.file.read()
+                resume.file.close()
+            except Exception as e:
+                logger.error(f"❌ Failed to read file from storage: {e}")
+                return Response(
+                    {"detail": f"File not accessible: {str(e)[:100]}"}, 
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE
+                )
+            
+            if not file_bytes:
+                logger.error(f"❌ File read returned empty bytes for resume {resume.id}")
+                return Response(
+                    {"detail": "File is empty or not yet uploaded. Please try again in a moment."},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE
+                )
+            
             file_obj = BytesIO(file_bytes)
             filename = resume.original_filename or resume.file.name.split("/")[-1]
+            logger.info(f"📁 Streaming file directly: {filename} ({len(file_bytes)} bytes)")
             response = FileResponse(file_obj, as_attachment=True, filename=filename)
             return response
+            
         except FileNotFoundError:
-            return Response({"detail": "File not found."}, status=status.HTTP_404_NOT_FOUND)
+            logger.error(f"❌ File not found for resume {resume.id}")
+            return Response(
+                {"detail": "File not found."}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.exception(f"❌ Download failed for resume {resume.id}: {e}")
+            return Response(
+                {"detail": f"Download failed: {str(e)[:100]}"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 def _parse_and_save_resume(resume: Resume) -> None:
