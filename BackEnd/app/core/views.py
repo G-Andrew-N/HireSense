@@ -634,6 +634,13 @@ class ResumeViewSet(ModelViewSet):
 
     def perform_create(self, serializer):
         try:
+            # Extract file bytes BEFORE saving (so we have them for processing)
+            file_upload = self.request.FILES.get("file_upload")
+            file_bytes = None
+            if file_upload:
+                file_bytes = file_upload.read()
+                file_upload.seek(0)  # Reset for FileField to re-read
+            
             instance = serializer.save()
         except Exception as e:
             RESUME_LOG.exception("Resume save failed: %s", e, exc_info=True)
@@ -648,18 +655,28 @@ class ResumeViewSet(ModelViewSet):
         except Exception as e:
             RESUME_LOG.warning("Failed to clear previous job matches for user %s: %s", instance.user_id, e)
 
-        # Process resume synchronously (no background workers on Render free tier)
+        # Process resume synchronously - use captured file bytes if available
         self.match_analysis = {"started": False, "mode": "manual"}
         try:
-            from .resume_pipeline import process_resume_file
+            from .resume_pipeline import process_resume_file_from_bytes
 
-            result = process_resume_file(instance)
+            if file_bytes:
+                # Process using captured file bytes (before upload to Cloudinary)
+                result = process_resume_file_from_bytes(file_bytes, instance.original_filename)
+                RESUME_LOG.info("✓ Processed resume from captured file bytes: raw_text=%d chars", len(result.raw_text))
+            else:
+                # Fallback: process from Cloudinary (may be empty if file not ready)
+                from .resume_pipeline import process_resume_file
+                result = process_resume_file(instance)
+                RESUME_LOG.info("⚠ Processed resume from Cloudinary: raw_text=%d chars", len(result.raw_text))
+            
             instance.raw_text = result.raw_text
             content = dict(result.parsed_content)
             if result.structure_hints:
                 content["structure_hints"] = result.structure_hints
             instance.parsed_content = content
             instance.save(update_fields=["raw_text", "parsed_content"])
+            RESUME_LOG.info("✓ Saved resume with raw_text: %d chars, parsed_content: %s", len(result.raw_text), list(content.keys()))
         except Exception as e:
             RESUME_LOG.warning("Resume parsing failed during upload: %s", e)
 

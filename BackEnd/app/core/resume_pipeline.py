@@ -27,48 +27,44 @@ class PipelineResult(NamedTuple):
     error: str | None = None
 
 
-def process_resume_file(resume: Resume) -> PipelineResult:
+def process_resume_file_from_bytes(file_bytes: bytes, filename: str = "") -> PipelineResult:
     """
-    Full pipeline: extract text from file -> AI parse -> return result.
-    Works with FileField storage (reads into memory for seekability).
+    Process resume from raw file bytes (captured before Cloudinary upload).
+    Faster and more reliable than reading from Cloudinary after async upload.
 
     Does NOT save to the Resume instance; caller should update and save.
     """
-    # Stage 1: Get file and read into memory
-    if not resume.file:
+    if not file_bytes:
         return PipelineResult(
             raw_text="",
             parsed_content={},
             structure_hints={},
             success=False,
-            error="No file attached",
+            error="No file bytes provided",
         )
 
     try:
         from io import BytesIO
         
-        # Read file into memory to ensure seekability for extraction libraries
-        resume.file.open("rb")
-        file_bytes = resume.file.read()
-        resume.file.close()
-        
-        # Create a seekable BytesIO object for extraction libraries
+        # Create a seekable BytesIO object from bytes for extraction libraries
         file_obj = BytesIO(file_bytes)
         extraction = extract_with_structure(file_obj)
+        logger.info("✓ Extracted from file bytes: %d bytes -> %d chars text", len(file_bytes), len(extraction.raw_text))
     except Exception as e:
-        logger.exception("Resume file read failed: %s", e)
+        logger.exception("Resume file extraction from bytes failed: %s", e)
         return PipelineResult(
             raw_text="",
             parsed_content={},
             structure_hints={},
             success=False,
-            error="Failed to read file",
+            error="Failed to extract text from file",
         )
 
     raw_text = extraction.raw_text.strip()
     structure_hints = extraction.structure_hints
 
     if not raw_text:
+        logger.warning("⚠ No text extracted from file: %s (bytes: %d)", filename, len(file_bytes))
         return PipelineResult(
             raw_text="",
             parsed_content={},
@@ -88,6 +84,93 @@ def process_resume_file(resume: Resume) -> PipelineResult:
     except Exception as e:
         logger.exception("AI parsing failed: %s", e)
 
+    logger.info("✓ Successfully processed resume: raw_text=%d chars, parsed_keys=%s", len(raw_text), list(parsed_content.keys()))
+    return PipelineResult(
+        raw_text=raw_text,
+        parsed_content=parsed_content,
+        structure_hints=structure_hints,
+        success=True,
+    )
+
+
+def process_resume_file(resume: Resume) -> PipelineResult:
+    """
+    Full pipeline: extract text from FileField -> AI parse -> return result.
+    Fallback when file bytes are not available from request.
+    WARNING: File may not be fully synced from Cloudinary yet.
+
+    Does NOT save to the Resume instance; caller should update and save.
+    """
+    # Stage 1: Get file and read into memory
+    if not resume.file:
+        logger.error("❌ Resume has no file attached: id=%s", resume.id)
+        return PipelineResult(
+            raw_text="",
+            parsed_content={},
+            structure_hints={},
+            success=False,
+            error="No file attached",
+        )
+
+    try:
+        from io import BytesIO
+        
+        # Read file into memory to ensure seekability for extraction libraries
+        logger.info("📄 Reading file from Cloudinary: %s", resume.file.name if hasattr(resume.file, 'name') else resume.file)
+        resume.file.open("rb")
+        file_bytes = resume.file.read()
+        resume.file.close()
+        
+        if not file_bytes:
+            logger.error("❌ File read returned empty bytes: %s", resume.file.name if hasattr(resume.file, 'name') else resume.file)
+            return PipelineResult(
+                raw_text="",
+                parsed_content={},
+                structure_hints={},
+                success=False,
+                error="File is empty",
+            )
+        
+        logger.info("✓ Read %d bytes from file", len(file_bytes))
+        
+        # Create a seekable BytesIO object for extraction libraries
+        file_obj = BytesIO(file_bytes)
+        extraction = extract_with_structure(file_obj)
+    except Exception as e:
+        logger.exception("Resume file read failed: %s", e)
+        return PipelineResult(
+            raw_text="",
+            parsed_content={},
+            structure_hints={},
+            success=False,
+            error="Failed to read file",
+        )
+
+    raw_text = extraction.raw_text.strip()
+    structure_hints = extraction.structure_hints
+
+    if not raw_text:
+        logger.warning("⚠ No text extracted from resume file")
+        return PipelineResult(
+            raw_text="",
+            parsed_content={},
+            structure_hints=structure_hints,
+            success=False,
+            error="Could not extract text from file",
+        )
+
+    # Stage 2 & 3: AI parsing (structure hints available for future enhancement)
+    parsed_content = {}
+    try:
+        from ai.resume_parser import parse_resume
+
+        parsed_content = parse_resume(raw_text) or {}
+    except ValueError as e:
+        logger.warning("AI parsing skipped (API key missing?): %s", e)
+    except Exception as e:
+        logger.exception("AI parsing failed: %s", e)
+
+    logger.info("✓ Successfully processed resume from file: raw_text=%d chars, parsed_keys=%s", len(raw_text), list(parsed_content.keys()))
     return PipelineResult(
         raw_text=raw_text,
         parsed_content=parsed_content,
