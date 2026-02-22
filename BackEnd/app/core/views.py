@@ -929,6 +929,9 @@ class ResumeViewSet(ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+    @action(detail=True, methods=["get"])
+    def review(self, request, pk=None):
+        """Rule-based resume review using stored raw_text and parsed_content."""
         import re
 
         resume = self.get_object()
