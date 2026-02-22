@@ -29,47 +29,31 @@ class PipelineResult(NamedTuple):
 
 def process_resume_file(resume: Resume) -> PipelineResult:
     """
-    Full pipeline: extract text from binary file data -> AI parse -> return result.
-    Supports both new file_data (BinaryField) and legacy file (FileField).
+    Full pipeline: extract text from file -> AI parse -> return result.
+    Works with FileField storage (reads into memory for seekability).
 
     Does NOT save to the Resume instance; caller should update and save.
     """
-    # Stage 1: Get binary file data (prefer file_data, fallback to file)
-    file_data = None
-    
-    if resume.file_data:
-        # New approach: binary data stored in database
-        file_data = resume.file_data
-    elif resume.file:
-        # Fallback: read from FileField (legacy Cloudinary storage)
-        try:
-            from io import BytesIO
-            resume.file.open("rb")
-            file_data = resume.file.read()
-            resume.file.close()
-        except Exception as e:
-            logger.exception("Failed to read legacy file field: %s", e)
-            return PipelineResult(
-                raw_text="",
-                parsed_content={},
-                structure_hints={},
-                success=False,
-                error="Failed to read file",
-            )
-    else:
+    # Stage 1: Get file and read into memory
+    if not resume.file:
         return PipelineResult(
             raw_text="",
             parsed_content={},
             structure_hints={},
             success=False,
-            error="No file data attached",
+            error="No file attached",
         )
 
     try:
         from io import BytesIO
         
-        # Create a seekable BytesIO object from binary data for extraction libraries
-        file_obj = BytesIO(file_data)
+        # Read file into memory to ensure seekability for extraction libraries
+        resume.file.open("rb")
+        file_bytes = resume.file.read()
+        resume.file.close()
+        
+        # Create a seekable BytesIO object for extraction libraries
+        file_obj = BytesIO(file_bytes)
         extraction = extract_with_structure(file_obj)
     except Exception as e:
         logger.exception("Resume file read failed: %s", e)

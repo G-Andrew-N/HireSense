@@ -170,9 +170,9 @@ class ResumeSerializer(serializers.ModelSerializer):
         
         file_upload = validated_data.pop("file_upload", None)
         if file_upload:
-            # Store original filename and read file content into memory
+            # Store original filename and file using FileField
             validated_data["original_filename"] = file_upload.name
-            validated_data["file_data"] = file_upload.read()
+            validated_data["file"] = file_upload
         
         validated_data["user"] = user
         validated_data["version"] = version

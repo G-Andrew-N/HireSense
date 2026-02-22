@@ -14,7 +14,6 @@ class UserProfile(models.Model):
         related_name="profile",
     )
     avatar = models.ImageField(
-        storage="cloudinary_storage.storage.CloudinaryStorage",
         upload_to="avatars/%Y/%m/",
         null=True,
         blank=True,
@@ -140,8 +139,6 @@ class JobSite(models.Model):
 class Resume(models.Model):
     """
     User resume file with versioning and optional parsed content for matching.
-    file_data: Binary storage in database (new, preferred)
-    file: FileField for backwards compatibility (deprecated, will be removed)
     """
 
     user = models.ForeignKey(
@@ -149,18 +146,7 @@ class Resume(models.Model):
         on_delete=models.CASCADE,
         related_name="resumes",
     )
-    file = models.FileField(
-        upload_to="resumes/%Y/%m/",
-        max_length=500,
-        null=True,
-        blank=True,
-        help_text="Deprecated: use file_data instead",
-    )
-    file_data = models.BinaryField(
-        null=True,
-        blank=True,
-        help_text="Resume file content (PDF, DOC, DOCX, TXT) stored as binary data in database."
-    )
+    file = models.FileField(upload_to="resumes/%Y/%m/", max_length=500)
     original_filename = models.CharField(max_length=255, blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     # Version: increment when user uploads a new file; latest = current resume

@@ -664,7 +664,8 @@ class ResumeViewSet(ModelViewSet):
             RESUME_LOG.warning("Resume parsing failed during upload: %s", e)
 
     def perform_destroy(self, instance):
-        # File data is stored in database, no need to delete from storage
+        if instance.file:
+            instance.file.delete(save=False)
         instance.delete()
 
     @action(detail=True, methods=["post"])
@@ -757,30 +758,19 @@ class ResumeViewSet(ModelViewSet):
         from io import BytesIO
         
         resume = self.get_object()
-        file_data = None
-        
-        # Prefer new file_data (BinaryField), fallback to legacy file (FileField)
-        if resume.file_data:
-            file_data = resume.file_data
-        elif resume.file:
-            try:
-                resume.file.open("rb")
-                file_data = resume.file.read()
-                resume.file.close()
-            except Exception as e:
-                RESUME_LOG.exception("Failed to read legacy file field: %s", e)
-                return Response({"detail": "File not found."}, status=status.HTTP_404_NOT_FOUND)
-        else:
+        if not resume.file:
             return Response({"detail": "No file attached."}, status=status.HTTP_404_NOT_FOUND)
-        
         try:
-            # Create a file-like object from binary data
-            file_obj = BytesIO(file_data)
-            filename = resume.original_filename or f"resume_{resume.id}.bin"
+            # Read file into memory and serve as BytesIO (for seeking support)
+            resume.file.open("rb")
+            file_bytes = resume.file.read()
+            resume.file.close()
+            
+            file_obj = BytesIO(file_bytes)
+            filename = resume.original_filename or resume.file.name.split("/")[-1]
             response = FileResponse(file_obj, as_attachment=True, filename=filename)
             return response
-        except Exception as e:
-            RESUME_LOG.exception("Resume download failed: %s", e)
+        except FileNotFoundError:
             return Response({"detail": "File not found."}, status=status.HTTP_404_NOT_FOUND)
 
 
