@@ -171,11 +171,28 @@ MEDIA_ROOT = BASE_DIR / "media"
 USE_CLOUDINARY = os.getenv("CLOUDINARY_CLOUD_NAME", "").strip()
 
 if USE_CLOUDINARY:
+    import cloudinary
+    
+    # Configure cloudinary package (required for django-cloudinary-storage to work)
+    cloudinary.config(
+        cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+        api_key=os.getenv("CLOUDINARY_API_KEY"),
+        api_secret=os.getenv("CLOUDINARY_API_SECRET"),
+        secure=True,
+    )
+    
     CLOUDINARY_STORAGE = {
         "CLOUD_NAME": os.getenv("CLOUDINARY_CLOUD_NAME"),
         "API_KEY": os.getenv("CLOUDINARY_API_KEY"),
         "API_SECRET": os.getenv("CLOUDINARY_API_SECRET"),
+        "SECURE": True,  # Use HTTPS URLs
+        "STATIC_TAG": False,  # Don't add static tag
     }
+    # Debug: Log Cloudinary configuration (not the secret, just that it's loaded)
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"🔧 Cloudinary configured: cloud_name={CLOUDINARY_STORAGE['CLOUD_NAME']}, api_key={CLOUDINARY_STORAGE['API_KEY'][:4]}..., has_secret={bool(CLOUDINARY_STORAGE['API_SECRET'])}")
+    
     # Only use Cloudinary for resumes (default file storage)
     # Avatars use LocalAvatarStorage to avoid CORS
     DEFAULT_FILE_STORAGE = "cloudinary_storage.storage.MediaCloudinaryStorage"
