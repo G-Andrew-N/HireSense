@@ -814,7 +814,6 @@ class ResumeViewSet(ModelViewSet):
     @action(detail=True, methods=["get"])
     def download(self, request, pk=None):
         """Secure download: only the owning user can download."""
-        from io import BytesIO
         from urllib.parse import urlparse
         
         resume = self.get_object()
@@ -841,47 +840,37 @@ class ResumeViewSet(ModelViewSet):
                     return url
                 return None
             
-            # Check if file.name is already a full Cloudinary URL (not a relative path)
+            # Prefer streaming from storage to avoid cross-origin redirects in browsers.
+            try:
+                resume.file.open("rb")
+                filename = resume.original_filename or resume.file.name.split("/")[-1]
+                logger.info(f"📁 Streaming file directly: {filename}")
+                return FileResponse(resume.file, as_attachment=True, filename=filename)
+            except Exception as e:
+                logger.warning(f"⚠️  Direct stream failed, attempting redirect: {e}")
+
+            # If streaming fails, try redirecting to Cloudinary as a fallback.
             if file_name and isinstance(file_name, str):
                 fixed_url = fix_and_validate_url(file_name)
                 if fixed_url:
                     logger.info(f"📎 Using stored Cloudinary URL: {fixed_url[:80]}...")
                     return HttpResponseRedirect(fixed_url)
-            
-            # Check if file.url is available and valid
+
             if file_url and isinstance(file_url, str):
                 fixed_url = fix_and_validate_url(file_url)
                 if fixed_url:
                     logger.info(f"📎 Redirecting to Cloudinary URL: {fixed_url[:80]}...")
                     return HttpResponseRedirect(fixed_url)
-            
-            # Fallback: URL is missing or invalid, try to stream the file directly
-            logger.info(f"⚠️  Cloudinary URL not available or invalid (name={repr(file_name)[:60]}, url={repr(file_url)[:60]}), streaming file directly")
-            
-            # Try to open and read the file from storage
-            try:
-                resume.file.open("rb")
-                file_bytes = resume.file.read()
-                resume.file.close()
-            except Exception as e:
-                logger.error(f"❌ Failed to read file from storage: {e}")
-                return Response(
-                    {"detail": f"File not accessible: {str(e)[:100]}"}, 
-                    status=status.HTTP_503_SERVICE_UNAVAILABLE
-                )
-            
-            if not file_bytes:
-                logger.error(f"❌ File read returned empty bytes for resume {resume.id}")
-                return Response(
-                    {"detail": "File is empty or not yet uploaded. Please try again in a moment."},
-                    status=status.HTTP_503_SERVICE_UNAVAILABLE
-                )
-            
-            file_obj = BytesIO(file_bytes)
-            filename = resume.original_filename or resume.file.name.split("/")[-1]
-            logger.info(f"📁 Streaming file directly: {filename} ({len(file_bytes)} bytes)")
-            response = FileResponse(file_obj, as_attachment=True, filename=filename)
-            return response
+
+            logger.error(
+                "❌ Cloudinary URL not available or invalid and streaming failed (name=%s, url=%s)",
+                repr(file_name)[:60],
+                repr(file_url)[:60],
+            )
+            return Response(
+                {"detail": "File not accessible. Please try again in a moment."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
             
         except FileNotFoundError:
             logger.error(f"❌ File not found for resume {resume.id}")
