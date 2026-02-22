@@ -57,16 +57,25 @@ class UserSerializer(serializers.ModelSerializer):
         if not profile or not profile.avatar:
             return None
         
-        # Return local media URL (avatars stored locally, not on Cloudinary)
-        avatar_url = profile.avatar.url
-        if not avatar_url:
+        # Return URL to media-serving view with CORS headers
+        # This avoids OpaqueResponseBlocking errors
+        avatar_path = profile.avatar.name  # avatars/2026/02/filename.jpg
+        
+        if not avatar_path:
             return None
         
-        # If relative path, build absolute URL
-        if not avatar_url.startswith(("http://", "https://")):
-            return request.build_absolute_uri(avatar_url)
+        # Parse path: avatars/2026/02/filename.jpg -> media/avatars/2026/02/filename
+        parts = avatar_path.split('/')
+        if len(parts) < 4:
+            return None
         
-        return avatar_url
+        year = parts[1]  # 2026
+        month = parts[2]  # 02
+        filename = parts[3]  # filename.jpg
+        
+        # Build URL to CORS-enabled media view
+        url = f"/api/media/avatars/{year}/{month}/{filename}"
+        return request.build_absolute_uri(url)
 
     def get_email_notifications(self, obj):
         profile = getattr(obj, "profile", None)

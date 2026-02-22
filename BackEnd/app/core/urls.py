@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from . import views
+from .media_views import AvatarFileView
 
 router = DefaultRouter()
 router.register(r"resumes", views.ResumeViewSet, basename="resume")
@@ -13,6 +14,9 @@ router.register(r"admin/notifications", views.SystemNotificationViewSet, basenam
 router.register(r"notifications", views.UserNotificationViewSet, basename="user-notification")
 
 urlpatterns = [
+    # Media serving with CORS headers
+    path("media/avatars/<str:year>/<str:month>/<str:filename>", AvatarFileView.as_view(), name="avatar-file"),
+    
     # AI endpoints (must precede router so /resumes/parse/ is not captured as pk)
     path("resumes/parse/", views.ResumeParseView.as_view(), name="resume-parse"),
     path("jobs/match/", views.JobMatchAnalysisView.as_view(), name="job-match"),
