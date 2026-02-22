@@ -3,6 +3,7 @@ import json
 import logging
 
 from tenacity import retry, stop_after_attempt, wait_exponential
+from django.conf import settings
 
 from .client import chat_completion_json
 
@@ -47,12 +48,21 @@ def _call_ai(resume_text: str, parsed_content: dict) -> str:
     """Call AI to generate insights (OpenAI or Gemini based on AI_PROVIDER)."""
     import json as _json
 
+    provider = getattr(settings, "AI_PROVIDER", "openai") or "openai"
+    # Groq has a smaller TPM limit; reduce prompt size to avoid 413 errors.
+    if provider == "groq":
+        max_resume_chars = 6000
+        max_parsed_chars = 2000
+    else:
+        max_resume_chars = 12000
+        max_parsed_chars = 4000
+
     parsed_json = _json.dumps(parsed_content, indent=2) if parsed_content else "{}"
     return chat_completion_json(
         system=SYSTEM_PROMPT,
         user=USER_PROMPT_TEMPLATE.format(
-            resume_text=resume_text[:12000],
-            parsed_json=parsed_json[:4000],
+            resume_text=resume_text[:max_resume_chars],
+            parsed_json=parsed_json[:max_parsed_chars],
         ),
         temperature=0.3,
     )
