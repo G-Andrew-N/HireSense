@@ -667,6 +667,14 @@ class ResumeViewSet(ModelViewSet):
                 RESUME_LOG.warning("⚠ No file in request.FILES (keys=%s)", list(self.request.FILES.keys()))
             
             instance = serializer.save(file=file_upload) if file_upload else serializer.save()
+            if instance.file and isinstance(instance.file.name, str):
+                file_name = instance.file.name
+                if file_name.startswith("https:/") and not file_name.startswith("https://"):
+                    instance.file.name = "https://" + file_name[len("https:/"):]
+                    instance.save(update_fields=["file"])
+                elif file_name.startswith("http:/") and not file_name.startswith("http://"):
+                    instance.file.name = "http://" + file_name[len("http:/"):]
+                    instance.save(update_fields=["file"])
             RESUME_LOG.info("✓ Resume saved: id=%s, file=%s", instance.id, instance.file.name if instance.file else "None")
         except Exception as e:
             RESUME_LOG.exception("Resume save failed: %s", e, exc_info=True)
@@ -824,9 +832,9 @@ class ResumeViewSet(ModelViewSet):
                     return None
                 # Fix missing slash (https:/res -> https://res)
                 if url.startswith("https:/") and not url.startswith("https://"):
-                    url = "https://" + url[8:]
+                    url = "https://" + url[len("https:/"):]
                 elif url.startswith("http:/") and not url.startswith("http://"):
-                    url = "http://" + url[7:]
+                    url = "http://" + url[len("http:/"):]
                 # Validate it's from Cloudinary
                 parsed = urlparse(url)
                 if parsed.netloc and "cloudinary.com" in parsed.netloc:
