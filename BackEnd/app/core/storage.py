@@ -13,6 +13,7 @@ class LocalAvatarStorage(FileSystemStorage):
     """
     def __init__(self, *args, **kwargs):
         # Use local media directory for avatars
-        kwargs['location'] = os.path.join(settings.BASE_DIR, 'media', 'avatars')
-        kwargs['base_url'] = '/media/avatars/'
+        # Note: upload_to="avatars/..." will be appended, so just use MEDIA_ROOT
+        kwargs['location'] = os.path.join(settings.BASE_DIR, 'media')
+        kwargs['base_url'] = '/media/'
         super().__init__(*args, **kwargs)
