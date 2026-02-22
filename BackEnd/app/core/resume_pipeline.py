@@ -60,7 +60,8 @@ def process_resume_file_from_bytes(file_bytes: bytes, filename: str = "") -> Pip
             error="Failed to extract text from file",
         )
 
-    raw_text = extraction.raw_text.strip()
+    # Postgres TEXT cannot contain NUL bytes; strip them defensively
+    raw_text = extraction.raw_text.replace("\x00", "").strip()
     structure_hints = extraction.structure_hints
 
     if not raw_text:
@@ -146,7 +147,8 @@ def process_resume_file(resume: Resume) -> PipelineResult:
             error="Failed to read file",
         )
 
-    raw_text = extraction.raw_text.strip()
+    # Postgres TEXT cannot contain NUL bytes; strip them defensively
+    raw_text = extraction.raw_text.replace("\x00", "").strip()
     structure_hints = extraction.structure_hints
 
     if not raw_text:

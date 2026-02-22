@@ -684,7 +684,7 @@ class ResumeViewSet(ModelViewSet):
                                result.success, len(result.raw_text), list(result.parsed_content.keys()), result.error)
             
             if result.raw_text:
-                instance.raw_text = result.raw_text
+                instance.raw_text = result.raw_text.replace("\x00", "")
                 content = dict(result.parsed_content)
                 if result.structure_hints:
                     content["structure_hints"] = result.structure_hints
