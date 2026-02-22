@@ -175,11 +175,17 @@ export function Settings() {
                           alt="Profile" 
                           className="w-full h-full object-cover"
                           onError={(e) => {
+                            console.warn(`Avatar failed to load: ${user.avatar}`, e);
                             (e.target as HTMLImageElement).src = "/api/media/avatars/default";
                           }}
                         />
                       ) : (
-                        <img src="/api/media/avatars/default" alt="Default Profile" className="w-full h-full object-cover" />
+                        <img 
+                          src="/api/media/avatars/default" 
+                          alt="Default Profile" 
+                          className="w-full h-full object-cover"
+                          onError={(e) => console.error("Default avatar failed to load", e)}
+                        />
                       )}
                     </div>
                     <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">

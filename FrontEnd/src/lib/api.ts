@@ -11,13 +11,18 @@ const API_BASE =
 
 function normalizeAvatarUrl(url: string | null | undefined): string | null {
   if (!url) return null;
+  
   let normalized = url;
+  
+  // Fix malformed HTTP/HTTPS URLs
   if (normalized.startsWith('https:/') && !normalized.startsWith('https://')) {
     normalized = normalized.replace('https:/', 'https://');
   }
   if (normalized.startsWith('http:/') && !normalized.startsWith('http://')) {
     normalized = normalized.replace('http:/', 'http://');
   }
+  
+  // Handle Cloudinary URLs
   normalized = normalized.replace('https:/res.cloudinary.com', 'https://res.cloudinary.com');
   normalized = normalized.replace('http:/res.cloudinary.com', 'http://res.cloudinary.com');
   if (normalized.split('res.cloudinary.com').length - 1 > 1) {
@@ -26,6 +31,22 @@ function normalizeAvatarUrl(url: string | null | undefined): string | null {
     const idx = Math.max(httpsIdx, httpIdx);
     if (idx >= 0) normalized = normalized.slice(idx);
   }
+  
+  // Handle relative paths - ensure they're resolved relative to API base
+  // If avatar is a relative path and not an absolute URL, prepend API base
+  if (normalized.startsWith('/') && !normalized.startsWith('http')) {
+    // It's a relative path - try to make it absolute using API_BASE
+    // For /api/media/avatars/*, we need to use the same origin as API_BASE
+    try {
+      const apiUrl = new URL(API_BASE, window.location.href);
+      const baseOrigin = apiUrl.origin;
+      normalized = `${baseOrigin}${normalized}`;
+    } catch {
+      // If URL construction fails, log but keep the relative path
+      console.warn('Could not construct absolute avatar URL from relative path:', normalized);
+    }
+  }
+  
   return normalized;
 }
 

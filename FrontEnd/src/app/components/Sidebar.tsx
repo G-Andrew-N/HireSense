@@ -78,6 +78,7 @@ export function Sidebar() {
               alt={user?.first_name && user?.last_name ? `${user.first_name} ${user.last_name}` : user?.email ?? "User"}
               className="w-8 h-8 rounded-full object-cover"
               onError={(e) => {
+                console.warn(`Avatar failed to load: ${user.avatar}`, e);
                 // Fallback to default if custom image fails to load
                 (e.target as HTMLImageElement).src = "/api/media/avatars/default";
               }}
@@ -87,6 +88,7 @@ export function Sidebar() {
               src="/api/media/avatars/default"
               alt={user?.first_name && user?.last_name ? `${user.first_name} ${user.last_name}` : user?.email ?? "User"}
               className="w-8 h-8 rounded-full object-cover"
+              onError={(e) => console.error("Default avatar failed to load", e)}
             />
           )}
           <div className="flex-1 min-w-0">
