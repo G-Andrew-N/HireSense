@@ -580,8 +580,9 @@ class JobMatchAnalysisTriggerView(APIView):
         chunk_size = min(max(chunk_size, 1), 5)
 
         try:
-            # Step 1: scan for fresh jobs (stop as soon as we have chunk_size results)
-            _run_scan_all_limited(max_results_per_source=2, max_total=chunk_size)
+            # Step 1: scan for fresh jobs (reduced to prevent timeout)
+            # Only scan 1 job per source to minimize network time
+            _run_scan_all_limited(max_results_per_source=1, max_total=chunk_size)
             _fetch_indeed_jobs_for_user(
                 request.user.id,
                 auto_trigger_analysis=False,

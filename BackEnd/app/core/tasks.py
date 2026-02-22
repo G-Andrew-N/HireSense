@@ -375,8 +375,8 @@ def _run_scan_all_limited(max_results_per_source: int = 3, max_total: int = 30) 
     ensure_builtin_job_sites()
     
     # Whitelist of sources we know work
+    # Note: Remotive RSS feed is broken (404), but Remotive API is used via profession-aware fetch
     RELIABLE_SOURCES = {
-        "Remotive",
         "We Work Remotely",
         "We Work Remotely - Design", 
         "We Work Remotely - Marketing",
@@ -506,7 +506,7 @@ def _fetch_indeed_jobs_for_user(
         "source_type": "remotive",
         "source_name": "Remotive",
         "config": {"keywords": query},
-        "max_results": 5
+        "max_results": 3  # Reduced from 5 to 3 to prevent timeouts
     })
     
     # Only add tech job sources for recognized tech/dev professions
@@ -518,13 +518,13 @@ def _fetch_indeed_jobs_for_user(
             "source_name": "We Work Remotely",
             "url": WWR_PROGRAMMING_RSS,
             "config": {},
-            "max_results": 5
+            "max_results": 3  # Reduced from 5 to 3 to prevent timeouts
         })
     elif query and query.lower() != "jobs":
         logger.info("Not adding tech-only sources for user %s (industry='%s', query='%s')", user_id, industry or "unknown", query)
     
     total_stored = 0
-    min_results_to_stop = max_total_results if max_total_results else 5
+    min_results_to_stop = max_total_results if max_total_results else 3  # Reduced from 5 to 3
     
     for c in candidates:
         try:
