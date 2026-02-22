@@ -154,9 +154,34 @@ export function JobMatches() {
       const result = await triggerMatchAnalysisChunk(2);
       const newMatches = result.matches ?? [];
       
-      // If there's a message (e.g., jobs analyzed but none passed threshold), show it
-      if (result.message) {
-        toast.info(result.message);
+      // Determine toast message based on status and result
+      let toastMessage: string | null = null;
+      
+      if (result.status === 'timeout') {
+        // Search timed out - temporary issue
+        toastMessage = result.message || "No new matches for now, try again later.";
+      } else if (result.status === 'failure') {
+        // Search truly failed - permanent error
+        toastMessage = result.message || "Search failed, the issue will be resolved soon.";
+      } else if (result.message) {
+        // Status is 'success' or undefined, show any custom message
+        toastMessage = result.message;
+      } else if (newMatches.length === 0 && result.status === 'success') {
+        // No timeout/failure, but no matches found
+        toastMessage = "No new matches found. Try searching with different criteria.";
+      }
+      
+      if (toastMessage) {
+        // Use info for timeout, error for failure, success for actual matches
+        if (result.status === 'failure') {
+          toast.error(toastMessage);
+        } else if (result.status === 'timeout') {
+          toast.info(toastMessage);
+        } else if (newMatches.length > 0) {
+          toast.success(`Found ${newMatches.length} new job match${newMatches.length === 1 ? '' : 'es'}!`);
+        } else {
+          toast.info(toastMessage);
+        }
       }
       
       if (newMatches.length > 0) {
@@ -173,7 +198,7 @@ export function JobMatches() {
       }
     } catch (err: unknown) {
       const errorDetail = (err as { body?: { detail?: string } })?.body?.detail;
-      const msg = errorDetail ?? "Search failed";
+      const msg = errorDetail ?? "Search failed, the issue will be resolved soon.";
       toast.error(msg);
     } finally {
       setScanning(false);

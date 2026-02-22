@@ -550,6 +550,8 @@ class JobMatchAnalysisTriggerView(APIView):
     """
     POST /api/jobs/run-match-analysis/
     - Processes 2 jobs per request by default for manual, incremental loading
+    - Returns status field: 'success', 'timeout', or 'failure' to help frontend
+      distinguish between temporary timeout vs. real search failure
     """
 
     permission_classes = [IsAuthenticated]
@@ -563,27 +565,42 @@ class JobMatchAnalysisTriggerView(APIView):
         chunk_size = int(chunk_param) if chunk_param and str(chunk_param).isdigit() else 2
         chunk_size = min(max(chunk_size, 1), 5)
 
-        # Step 1: scan for fresh jobs (stop as soon as we have chunk_size results)
-        _run_scan_all_limited(max_results_per_source=2, max_total=chunk_size)
-        _fetch_indeed_jobs_for_user(
-            request.user.id,
-            auto_trigger_analysis=False,
-            max_total_results=chunk_size,
-        )
+        try:
+            # Step 1: scan for fresh jobs (stop as soon as we have chunk_size results)
+            _run_scan_all_limited(max_results_per_source=2, max_total=chunk_size)
+            _fetch_indeed_jobs_for_user(
+                request.user.id,
+                auto_trigger_analysis=False,
+                max_total_results=chunk_size,
+            )
 
-        # Step 2: analyze up to chunk_size jobs and return them
-        result = _run_match_analysis_chunk(request.user.id, chunk_size)
-        if "error" in result:
-            return Response({"detail": result["error"]}, status=status.HTTP_400_BAD_REQUEST)
-        data = JobMatchSerializer(result["matches"], many=True).data
-        response_data = {
-            "matches": data,
-            "has_more": result["has_more"]
-        }
-        # Include message if jobs were analyzed but none passed threshold
-        if result.get("message"):
-            response_data["message"] = result["message"]
-        return Response(response_data)
+            # Step 2: analyze up to chunk_size jobs and return them
+            result = _run_match_analysis_chunk(request.user.id, chunk_size)
+            if "error" in result:
+                return Response({
+                    "detail": result["error"],
+                    "status": "failure",
+                    "message": "Search failed, the issue will be resolved soon."
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            data = JobMatchSerializer(result["matches"], many=True).data
+            response_data = {
+                "matches": data,
+                "has_more": result["has_more"],
+                "status": "success"
+            }
+            # Include message if jobs were analyzed but none passed threshold
+            if result.get("message"):
+                response_data["message"] = result["message"]
+            return Response(response_data)
+        
+        except Exception as e:
+            logger.exception(f"Search failed for user {request.user.id}: {e}")
+            return Response({
+                "detail": str(e),
+                "status": "failure",
+                "message": "Search failed, the issue will be resolved soon."
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # ----- Resume -----

@@ -4,6 +4,7 @@ import logging
 from datetime import date, timedelta
 
 from celery import shared_task
+from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
@@ -725,33 +726,76 @@ def _run_match_analysis_chunk(user_id: int, chunk_size: int = 3) -> dict:
     return {"matches": created_matches, "has_more": has_more, "message": message, "analyzed": analyzed}
 
 
-@shared_task(bind=True, name="core.tasks.run_match_analysis_for_user", max_retries=3, default_retry_delay=10)
+@shared_task(bind=True, name="core.tasks.run_match_analysis_for_user", max_retries=3, default_retry_delay=10, soft_time_limit=28, time_limit=32)
 def run_match_analysis_for_user(self, user_id: int) -> dict:
-    """Run match analysis for a single user (async)."""
+    """
+    Run match analysis for a single user (async).
+    Returns dict with status field: 'success', 'timeout', or 'failure'.
+    This helps frontend distinguish between temporary timeout vs. real search failure.
+    """
+    status = "failure"  # Default to failure if something goes wrong
+    
     try:
         user = User.objects.get(pk=user_id)
     except User.DoesNotExist:
-        return {"error": "User not found"}
+        return {
+            "error": "User not found",
+            "status": "failure",
+            "message": "Search failed, the issue will be resolved soon."
+        }
 
     resume = _get_current_resume(user)
     if not resume:
-        return {"error": "No resume found"}
+        return {
+            "error": "No resume found",
+            "status": "failure",
+            "message": "Search failed, the issue will be resolved soon."
+        }
     
     # If resume hasn't been parsed yet, retry in a few seconds
     if not resume.raw_text:
         logger.info("Resume %s not yet parsed, retrying match analysis in 10s...", resume.id)
         raise self.retry(countdown=10, exc=Exception("Resume not yet parsed"))
     
-    result = _run_match_analysis_for_user(user_id)
-
-    # If there are likely more jobs to analyze, schedule another chunk soon.
-    if result.get("has_more"):
-        try:
-            self.apply_async(args=[user_id], countdown=12)
-        except Exception as e:
-            logger.warning("Could not enqueue follow-up match analysis chunk: %s", e)
-
-    return result
+    try:
+        result = _run_match_analysis_for_user(user_id)
+        
+        # If there are likely more jobs to analyze, schedule another chunk soon.
+        if result.get("has_more"):
+            try:
+                self.apply_async(args=[user_id], countdown=12)
+            except Exception as e:
+                logger.warning("Could not enqueue follow-up match analysis chunk: %s", e)
+        
+        # Add success status to result
+        return {
+            **result,
+            "status": "success",
+            "message": None  # Use result.message if provided, else None
+        }
+    
+    except SoftTimeLimitExceeded:
+        # Worker is about to be killed due to timeout
+        logger.warning(f"⏱️  TIMEOUT: Match analysis for user {user_id} exceeded time limit - will retry next chunk")
+        return {
+            "status": "timeout",
+            "message": "No new matches for now, try again later.",
+            "matches": [],
+            "has_more": True,  # Assume there are more jobs; next chunk will continue
+            "analyzed": 0
+        }
+    
+    except Exception as e:
+        # Any other error during search
+        logger.exception(f"❌ FAILURE: Match analysis for user {user_id} failed with error: {e}")
+        return {
+            "error": str(e),
+            "status": "failure",
+            "message": "Search failed, the issue will be resolved soon.",
+            "matches": [],
+            "has_more": False,
+            "analyzed": 0
+        }
 
 
 @shared_task(bind=True, name="core.tasks._fetch_indeed_jobs_for_user_async")

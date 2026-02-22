@@ -435,10 +435,10 @@ export async function triggerMatchAnalysis(sync = true): Promise<{ task_id?: str
 /** Chunked match analysis: process a few jobs and return new matches. For progressive rendering. */
 export async function triggerMatchAnalysisChunk(
   chunkSize = 2
-): Promise<{ matches: JobMatch[]; has_more: boolean; message?: string }> {
+): Promise<{ matches: JobMatch[]; has_more: boolean; message?: string; status?: 'success' | 'timeout' | 'failure' }> {
   const url = `/jobs/run-match-analysis/?sync=true&chunk=${chunkSize}`;
-  const data = await apiRequest<{ matches: JobMatch[]; has_more: boolean; message?: string }>(url, { method: 'POST' });
-  return { matches: data.matches ?? [], has_more: data.has_more ?? false, message: data.message };
+  const data = await apiRequest<{ matches: JobMatch[]; has_more: boolean; message?: string; status?: 'success' | 'timeout' | 'failure' }>(url, { method: 'POST' });
+  return { matches: data.matches ?? [], has_more: data.has_more ?? false, message: data.message, status: data.status };
 }
 
 // Insights
