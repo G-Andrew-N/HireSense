@@ -103,7 +103,23 @@ export function Resume() {
     try {
       await deleteResume(r.id);
       toast.success("Resume removed");
-      load();
+      
+      // Reload data and notify if all resumes are now gone
+      setLoading(true);
+      try {
+        const updated = await getResumes();
+        setResumes(updated);
+        
+        // If there are no resumes left, dispatch event for Dashboard/Notifications to refresh
+        if (updated.length === 0) {
+          window.dispatchEvent(new CustomEvent("hiresense:resumes-cleared"));
+          console.log("📢 Dispatched hiresense:resumes-cleared - all resumes deleted");
+        }
+      } catch {
+        toast.error("Failed to reload resumes");
+      } finally {
+        setLoading(false);
+      }
     } catch {
       toast.error("Failed to remove resume");
     } finally {

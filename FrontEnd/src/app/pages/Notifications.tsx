@@ -114,6 +114,17 @@ export function Notifications() {
     fetchAdminNotifications();
   }, []);
 
+  // Listen for resume deletion event and refresh admin notifications
+  useEffect(() => {
+    const handleResumeCleared = () => {
+      console.log("📢 Notifications page received hiresense:resumes-cleared - refreshing data");
+      fetchAdminNotifications();
+    };
+
+    window.addEventListener("hiresense:resumes-cleared", handleResumeCleared);
+    return () => window.removeEventListener("hiresense:resumes-cleared", handleResumeCleared);
+  }, []);
+
 
 
   const handleNotificationClick = (notification: Notification) => {

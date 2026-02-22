@@ -260,6 +260,22 @@ export function JobMatches() {
     return () => window.removeEventListener("hiresense:scan-start", onScanStart);
   }, [setScanning]);
 
+  // Listen for resume deletion event and refresh data
+  useEffect(() => {
+    const handleResumeCleared = () => {
+      console.log("📢 JobMatches received hiresense:resumes-cleared - refreshing data");
+      if (mountedRef.current) {
+        setMatches([]);
+        setRequiresResume(true);
+        setScanning(false);
+        load();
+      }
+    };
+
+    window.addEventListener("hiresense:resumes-cleared", handleResumeCleared);
+    return () => window.removeEventListener("hiresense:resumes-cleared", handleResumeCleared);
+  }, [load, setScanning]);
+
   // Auto-load first 2 jobs on first visit if user has a resume but no matches
   useEffect(() => {
     const autoLoad = async () => {

@@ -57,6 +57,18 @@ export function Insights() {
     } catch {}
   }, []);
 
+  // Listen for resume deletion event and refresh insights
+  useEffect(() => {
+    const handleResumeCleared = () => {
+      console.log("📢 Insights page received hiresense:resumes-cleared - refreshing data");
+      setInsights([]);
+      loadInsights();
+    };
+
+    window.addEventListener("hiresense:resumes-cleared", handleResumeCleared);
+    return () => window.removeEventListener("hiresense:resumes-cleared", handleResumeCleared);
+  }, []);
+
   const handleGenerate = useCallback(() => {
     setGenerating(true);
     generateInsights()

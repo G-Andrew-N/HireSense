@@ -81,6 +81,21 @@ export function Dashboard() {
       .finally(() => setLoading(false));
   }, []);
 
+  // Listen for resume deletion event and refresh data
+  useEffect(() => {
+    const handleResumeCleared = () => {
+      console.log("📢 Dashboard received hiresense:resumes-cleared - refreshing data");
+      setLoading(true);
+      getJobMatches()
+        .then(setMatches)
+        .catch(() => toast.error("Failed to refresh matches"))
+        .finally(() => setLoading(false));
+    };
+
+    window.addEventListener("hiresense:resumes-cleared", handleResumeCleared);
+    return () => window.removeEventListener("hiresense:resumes-cleared", handleResumeCleared);
+  }, []);
+
   const analyzedMatches = matches
     .filter((m) => m.match_score != null && m.status !== "analyzing")
     .sort((a, b) => (b.match_score ?? 0) - (a.match_score ?? 0));
