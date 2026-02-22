@@ -226,7 +226,7 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_THROTTLE_RATES": {
         "ai": os.getenv("THROTTLE_AI_RATE", "10/hour"),
-        "ai_insights": os.getenv("THROTTLE_AI_INSIGHTS_RATE", "5/hour"),
+        "ai_insights": os.getenv("THROTTLE_AI_INSIGHTS_RATE", "50/hour"),  # Increased for testing (reduce to 5/hour for production)
         "ai_match": os.getenv("THROTTLE_AI_MATCH_RATE", "20/hour"),
         "scan": os.getenv("THROTTLE_SCAN_RATE", "10/hour"),
         "auth": os.getenv("THROTTLE_AUTH_RATE", "20/hour"),
