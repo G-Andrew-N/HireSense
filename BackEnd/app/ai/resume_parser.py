@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 
+from django.conf import settings
 from django.core.cache import cache
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -30,9 +31,12 @@ USER_PROMPT_TEMPLATE = "Extract structured data from this resume:\n\n{resume_tex
 )
 def _call_ai(resume_text: str) -> str:
     """Call AI chat completion with retries (OpenAI or Gemini based on AI_PROVIDER)."""
+    provider = getattr(settings, "AI_PROVIDER", "openai") or "openai"
+    # Groq has tighter TPM limits; reduce prompt size to avoid JSON truncation.
+    max_resume_chars = 6000 if provider == "groq" else 15000
     return chat_completion_json(
         system=SYSTEM_PROMPT,
-        user=USER_PROMPT_TEMPLATE.format(resume_text=resume_text[:15000]),
+        user=USER_PROMPT_TEMPLATE.format(resume_text=resume_text[:max_resume_chars]),
         temperature=0.2,
     )
 
@@ -49,7 +53,9 @@ def parse_resume(resume_text: str) -> dict | None:
         logger.warning("parse_resume called with empty text")
         return None
 
-    cache_key = "parse_resume:v1:" + hashlib.sha256(resume_text[:15000].encode()).hexdigest()
+    provider = getattr(settings, "AI_PROVIDER", "openai") or "openai"
+    max_resume_chars = 6000 if provider == "groq" else 15000
+    cache_key = "parse_resume:v1:" + hashlib.sha256(resume_text[:max_resume_chars].encode()).hexdigest()
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
