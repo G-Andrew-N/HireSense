@@ -9,6 +9,23 @@ from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 
 
+# Default avatar SVG (humanoid silhouette)
+DEFAULT_AVATAR_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <!-- Background circle -->
+  <circle cx="100" cy="100" r="100" fill="#e5e7eb"/>
+  
+  <!-- Head -->
+  <circle cx="100" cy="70" r="35" fill="#9ca3af"/>
+  
+  <!-- Body -->
+  <rect x="75" y="110" width="50" height="60" rx="8" fill="#9ca3af"/>
+  
+  <!-- Arms -->
+  <rect x="35" y="115" width="40" height="15" rx="8" fill="#9ca3af"/>
+  <rect x="125" y="115" width="40" height="15" rx="8" fill="#9ca3af"/>
+</svg>'''
+
+
 class AvatarFileView(APIView):
     """
     Serve avatar files with proper CORS headers.
@@ -70,6 +87,36 @@ class AvatarFileView(APIView):
             return HttpResponse(status=500)
     
     def options(self, request, year=None, month=None, filename=None):
+        """Handle CORS preflight requests."""
+        response = HttpResponse()
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'GET, HEAD, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type'
+        return response
+
+
+class DefaultAvatarView(APIView):
+    """
+    Serve a default avatar SVG for users who haven't set a profile picture.
+    """
+    permission_classes = [AllowAny]
+    
+    def get(self, request):
+        """
+        Serve default avatar image.
+        Example: GET /api/media/avatars/default
+        """
+        response = HttpResponse(DEFAULT_AVATAR_SVG, content_type='image/svg+xml')
+        
+        # Add CORS headers and caching
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'GET, HEAD, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type'
+        response['Cache-Control'] = 'public, max-age=86400'  # Cache for 24 hours
+        
+        return response
+    
+    def options(self, request):
         """Handle CORS preflight requests."""
         response = HttpResponse()
         response['Access-Control-Allow-Origin'] = '*'

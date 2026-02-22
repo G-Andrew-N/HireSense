@@ -54,28 +54,31 @@ class UserSerializer(serializers.ModelSerializer):
         if not request:
             return None
         profile = getattr(obj, "profile", None)
-        if not profile or not profile.avatar:
-            return None
         
-        # Return URL to media-serving view with CORS headers
-        # This avoids OpaqueResponseBlocking errors
-        avatar_path = profile.avatar.name  # avatars/2026/02/filename.jpg
+        # If user has a custom avatar, return the URL to it
+        if profile and profile.avatar:
+            # Return URL to media-serving view with CORS headers
+            # This avoids OpaqueResponseBlocking errors
+            avatar_path = profile.avatar.name  # avatars/2026/02/filename.jpg
+            
+            if not avatar_path:
+                return request.build_absolute_uri("/api/media/avatars/default")
+            
+            # Parse path: avatars/2026/02/filename.jpg -> media/avatars/2026/02/filename
+            parts = avatar_path.split('/')
+            if len(parts) < 4:
+                return request.build_absolute_uri("/api/media/avatars/default")
+            
+            year = parts[1]  # 2026
+            month = parts[2]  # 02
+            filename = parts[3]  # filename.jpg
+            
+            # Build URL to CORS-enabled media view
+            url = f"/api/media/avatars/{year}/{month}/{filename}"
+            return request.build_absolute_uri(url)
         
-        if not avatar_path:
-            return None
-        
-        # Parse path: avatars/2026/02/filename.jpg -> media/avatars/2026/02/filename
-        parts = avatar_path.split('/')
-        if len(parts) < 4:
-            return None
-        
-        year = parts[1]  # 2026
-        month = parts[2]  # 02
-        filename = parts[3]  # filename.jpg
-        
-        # Build URL to CORS-enabled media view
-        url = f"/api/media/avatars/{year}/{month}/{filename}"
-        return request.build_absolute_uri(url)
+        # Return default avatar URL if no custom avatar is set
+        return request.build_absolute_uri("/api/media/avatars/default")
 
     def get_email_notifications(self, obj):
         profile = getattr(obj, "profile", None)
