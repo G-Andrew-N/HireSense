@@ -242,7 +242,7 @@ class PasswordResetRequestView(APIView):
                 
                 send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(
                     to=[{"email": email}],
-                    sender={"email": "noreply@hiresense.app", "name": "HireSense"},
+                    sender={"email": "dreandrew11091@gmail.com", "name": "HireSense"},
                     subject="HireSense: Reset your password",
                     text_content=(
                         f"Hi,\n\nYou requested a password reset. Open the link below to set a new password:\n\n"
