@@ -54,9 +54,17 @@ def process_resume_file(resume: Resume) -> PipelineResult:
         )
 
     try:
+        from io import BytesIO
+        
+        # Read file bytes into memory to ensure seekability
+        # (Cloudinary files may not be natively seekable)
         resume.file.open("rb")
-        extraction = extract_with_structure(resume.file)
+        file_bytes = resume.file.read()
         resume.file.close()
+        
+        # Create a seekable BytesIO object for extraction libraries
+        file_obj = BytesIO(file_bytes)
+        extraction = extract_with_structure(file_obj)
     except Exception as e:
         logger.exception("Resume file read failed: %s", e)
         return PipelineResult(
