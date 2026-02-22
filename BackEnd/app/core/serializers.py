@@ -57,14 +57,16 @@ class UserSerializer(serializers.ModelSerializer):
         if not profile or not profile.avatar:
             return None
         
-        # Return proxy URL to avoid CORS issues with Cloudinary
-        # Format: /api/auth/avatar/{user_id}/
-        # Build from current request path to preserve /api prefix
-        base_url = request.build_absolute_uri('/').rstrip('/')
-        # Extract the API prefix from the current request path
-        api_prefix = '/api' if '/api/' in request.path else ''
-        proxy_path = f"{api_prefix}/auth/avatar/{obj.id}/"
-        return f"{base_url}{proxy_path}"
+        # Return local media URL (avatars stored locally, not on Cloudinary)
+        avatar_url = profile.avatar.url
+        if not avatar_url:
+            return None
+        
+        # If relative path, build absolute URL
+        if not avatar_url.startswith(("http://", "https://")):
+            return request.build_absolute_uri(avatar_url)
+        
+        return avatar_url
 
     def get_email_notifications(self, obj):
         profile = getattr(obj, "profile", None)

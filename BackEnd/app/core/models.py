@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from .storage import LocalAvatarStorage
 
 
 class UserProfile(models.Model):
@@ -15,9 +16,10 @@ class UserProfile(models.Model):
     )
     avatar = models.ImageField(
         upload_to="avatars/%Y/%m/",
+        storage=LocalAvatarStorage(),
         null=True,
         blank=True,
-        help_text="Profile photo.",
+        help_text="Profile photo (stored locally to avoid CORS issues).",
     )
     primary_resume = models.ForeignKey(
         "Resume",

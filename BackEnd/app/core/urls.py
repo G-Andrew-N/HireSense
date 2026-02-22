@@ -31,7 +31,6 @@ urlpatterns = [
         name="auth-refresh",
     ),
     path("auth/me/", views.MeView.as_view(), name="auth-me"),
-    path("auth/avatar/<int:user_id>/", views.AvatarProxyView.as_view(), name="auth-avatar-proxy"),
     path("auth/password-reset/", views.PasswordResetRequestView.as_view(), name="auth-password-reset"),
     path(
         "auth/password-reset/confirm/",
