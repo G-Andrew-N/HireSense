@@ -813,35 +813,45 @@ class ResumeViewSet(ModelViewSet):
         resume = self.get_object()
         
         try:
+            # If resume doesn't have raw_text, try to re-process the file first
+            if not resume.raw_text:
+                RESUME_LOG.info("Resume %s has no raw_text, re-processing file first", resume.id)
+                from core.resume_pipeline import process_resume_file
+                result = process_resume_file(resume)
+                
+                if not result.success or not result.raw_text:
+                    return Response(
+                        {"detail": f"Failed to extract text from resume file: {result.error or 'Unknown error'}"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                
+                # Save the extracted text
+                resume.raw_text = result.raw_text
+                resume.save(update_fields=["raw_text"])
+            
             # Clear cached parse results to force fresh analysis
             from django.core.cache import cache
             import hashlib
             from django.conf import settings
             
-            if resume.raw_text:
-                provider = getattr(settings, "AI_PROVIDER", "openai") or "openai"
-                max_resume_chars = 20000 if provider == "groq" else 50000
-                # Clear both old (v1) and new (v2) cache keys
-                for version in ["v1", "v2"]:
-                    cache_key = f"parse_resume:{version}:" + hashlib.sha256(resume.raw_text[:max_resume_chars].encode()).hexdigest()
-                    cache.delete(cache_key)
-                
-                # Trigger re-parsing
-                _parse_and_save_resume(resume)
-                resume.refresh_from_db()
-                
-                return Response(
-                    {
-                        "detail": "Resume re-parsed successfully",
-                        "resume": ResumeSerializer(resume, context={"request": request}).data
-                    },
-                    status=status.HTTP_200_OK,
-                )
-            else:
-                return Response(
-                    {"detail": "No resume text available to parse"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+            provider = getattr(settings, "AI_PROVIDER", "openai") or "openai"
+            max_resume_chars = 20000 if provider == "groq" else 50000
+            # Clear both old (v1) and new (v2) cache keys
+            for version in ["v1", "v2"]:
+                cache_key = f"parse_resume:{version}:" + hashlib.sha256(resume.raw_text[:max_resume_chars].encode()).hexdigest()
+                cache.delete(cache_key)
+            
+            # Trigger re-parsing
+            _parse_and_save_resume(resume)
+            resume.refresh_from_db()
+            
+            return Response(
+                {
+                    "detail": "Resume re-parsed successfully",
+                    "resume": ResumeSerializer(resume, context={"request": request}).data
+                },
+                status=status.HTTP_200_OK,
+            )
         except Exception as e:
             RESUME_LOG.exception("Failed to reparse resume %s: %s", resume.id, e)
             return Response(
