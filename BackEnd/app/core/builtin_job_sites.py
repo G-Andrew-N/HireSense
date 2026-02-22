@@ -21,12 +21,13 @@ BUILTIN_SITES = [
         "source_type": JobSite.SourceType.RSS,
         "scrape_config": {},
     },
-    {
-        "name": "Remotive",
-        "url": "https://remotive.com/remote-jobs/all/feed",
-        "source_type": JobSite.SourceType.RSS,
-        "scrape_config": {"keywords": "remote"},
-    },
+    # Remotive RSS feed returns 404 - using RemotiveFetcher API instead (profession-aware fetch)
+    # {
+    #     "name": "Remotive",
+    #     "url": "https://remotive.com/remote-jobs/all/feed",
+    #     "source_type": JobSite.SourceType.RSS,
+    #     "scrape_config": {"keywords": "remote"},
+    # },
     # Tech Job Boards
     {
         "name": "GitHub Jobs",

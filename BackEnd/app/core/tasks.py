@@ -573,7 +573,7 @@ def _run_match_analysis_for_user(user_id: int) -> dict:
     """Run match analysis for a user using small chunks to avoid worker timeouts."""
     from django.conf import settings
 
-    chunk_size = int(getattr(settings, "MATCH_ANALYSIS_CHUNK_SIZE", 3))
+    chunk_size = int(getattr(settings, "MATCH_ANALYSIS_CHUNK_SIZE", 2))
     result = _run_match_analysis_chunk(user_id, chunk_size=chunk_size)
     return {**result, "chunk_size": chunk_size}
 
