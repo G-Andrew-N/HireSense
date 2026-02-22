@@ -9,7 +9,7 @@ const API_BASE =
     ? '/api'  // Dev: use Vite proxy
     : (import.meta.env.VITE_API_URL || 'https://hiresense-0zhv.onrender.com/api');  // Production: use env var or fallback
 
-function normalizeAvatarUrl(url: string | null | undefined): string | null {
+function normalizeAvatarUrl(url: string | null | undefined, bustCache = false): string | null {
   if (!url) return null;
   let normalized = url;
   if (normalized.startsWith('https:/') && !normalized.startsWith('https://')) {
@@ -25,6 +25,11 @@ function normalizeAvatarUrl(url: string | null | undefined): string | null {
     const httpIdx = normalized.lastIndexOf('http://res.cloudinary.com');
     const idx = Math.max(httpsIdx, httpIdx);
     if (idx >= 0) normalized = normalized.slice(idx);
+  }
+  // Add cache busting timestamp when avatar is updated
+  if (bustCache && normalized) {
+    const separator = normalized.includes('?') ? '&' : '?';
+    normalized = `${normalized}${separator}t=${Date.now()}`;
   }
   return normalized;
 }
@@ -267,7 +272,8 @@ export async function updateProfile(payload: UpdateProfilePayload): Promise<User
     if (rest.weekly_reports !== undefined) form.append('weekly_reports', rest.weekly_reports ? '1' : '0');
     form.append('avatar', avatar);
     const user = await apiRequest<User>('/auth/me/', { method: 'PATCH', body: form });
-    return normalizeUser(user);
+    // Bust cache when avatar is uploaded to force browser to reload image
+    return { ...user, avatar: normalizeAvatarUrl(user.avatar, true) };
   }
   const user = await apiRequest<User>('/auth/me/', {
     method: 'PATCH',
