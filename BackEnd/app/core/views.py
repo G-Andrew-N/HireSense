@@ -91,14 +91,9 @@ class RegisterView(APIView):
         if avatar_file:
             safe_name = _safe_upload_name(avatar_file.name)
             profile.avatar.save(safe_name, avatar_file, save=False)
-            # Normalize malformed Cloudinary URLs after save
-            if profile.avatar and isinstance(profile.avatar.name, str):
-                avatar_name = profile.avatar.name
-                if avatar_name.startswith("https:/") and not avatar_name.startswith("https://"):
-                    profile.avatar.name = "https://" + avatar_name[len("https:/"):]
-                elif avatar_name.startswith("http:/") and not avatar_name.startswith("http://"):
-                    profile.avatar.name = "http://" + avatar_name[len("http:/"):]
             profile.save(update_fields=["avatar"])
+        # Reload user with profile for avatar serialization
+        user = User.objects.select_related("profile").get(pk=user.pk)
         return Response(
             {
                 "user": UserSerializer(user, context={"request": request}).data,
@@ -186,13 +181,6 @@ class MeView(APIView):
             if avatar_file:
                 safe_name = _safe_upload_name(avatar_file.name)
                 profile.avatar.save(safe_name, avatar_file, save=False)
-                # Normalize malformed Cloudinary URLs after save
-                if profile.avatar and isinstance(profile.avatar.name, str):
-                    avatar_name = profile.avatar.name
-                    if avatar_name.startswith("https:/") and not avatar_name.startswith("https://"):
-                        profile.avatar.name = "https://" + avatar_name[len("https:/"):]
-                    elif avatar_name.startswith("http:/") and not avatar_name.startswith("http://"):
-                        profile.avatar.name = "http://" + avatar_name[len("http:/"):]
                 profile_updates.append("avatar")
             if "email_notifications" in request.data:
                 val = request.data.get("email_notifications")
