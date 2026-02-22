@@ -366,20 +366,6 @@ export function Resume() {
                       <p className="text-sm text-red-600 dark:text-red-400">{reviewError}</p>
                     ) : review ? (
                       <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300">
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                          <div className="rounded border border-gray-200 dark:border-gray-700 px-2 py-1">
-                            <span className="text-gray-500">Words</span> · {review.summary.word_count}
-                          </div>
-                          <div className="rounded border border-gray-200 dark:border-gray-700 px-2 py-1">
-                            <span className="text-gray-500">Skills</span> · {review.summary.skills_count}
-                          </div>
-                          <div className="rounded border border-gray-200 dark:border-gray-700 px-2 py-1">
-                            <span className="text-gray-500">Experience</span> · {review.summary.experience_count}
-                          </div>
-                          <div className="rounded border border-gray-200 dark:border-gray-700 px-2 py-1">
-                            <span className="text-gray-500">Education</span> · {review.summary.education_count}
-                          </div>
-                        </div>
                         {review.strengths.length > 0 && (
                           <div>
                             <p className="text-xs font-semibold uppercase text-emerald-700 dark:text-emerald-400">Strengths</p>
