@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://hiresense-fi.vercel.app/sitemap.xml
